@@ -4,10 +4,13 @@ const DURATIONS = Object.freeze({ NIGHT: 45, DAY: 60, VOTING: 30 });
 
 function checkGameOver(room) {
   if (room.ended) return room.gameOverResult || null;
-  const living = room.living();
+  // Game mantém os jogadores num Map e expõe room.living() como a coleção de
+  // sobreviventes. Filtramos alive explicitamente para a condição de infeção.
+  const living = room.living().filter((player) => player.alive === true);
   const soulCollector = living.find((player) => player.role === ROLES.SOUL_COLLECTOR);
-  const mechanizedLiving = living.filter((player) => player.isMechanized === true);
-  if (soulCollector && living.length > 0 && mechanizedLiving.length === living.length) {
+  const totalAlive = living.length;
+  const mechanizedAlive = living.filter((player) => player.alive === true && player.isMechanized === true).length;
+  if (soulCollector && totalAlive > 0 && mechanizedAlive === totalAlive) {
     return room.finish('Colecionador de Almas Mecânicas', 'A oficina foi completamente mecanizada! Vitória do Colecionador de Almas.');
   }
   // Com dois jogadores a composição é um duelo didático e as condições de
@@ -624,12 +627,17 @@ class Game {
       this.addLog(`${actor.name} reativou ${target.name} na oficina.`, 'event');
       this.emitPrivate(actor.id, { type: 'revivalResult', targetName: target.name });
     }
-    // Infeção silenciosa: aplicar apenas depois das mortes e ressurreições.
+    // Infeção silenciosa: mecanizar não é um ataque. Esta ação nunca elimina
+    // nem altera a vida do alvo, ignora a proteção física do Alquimista e só
+    // marca jogadores que continuam vivos depois dos ataques independentes.
     for (const { actor, action, targetId } of actionFor(ROLES.SOUL_COLLECTOR)) {
       const target = this.getPlayer(targetId);
-      if (action === 'mechanize' && target?.alive && !target.isMechanized) {
+      if (action === 'mechanize' && target?.alive === true && !target.isMechanized) {
         target.isMechanized = true;
         target.mechanizedBy = actor.id;
+        if (this.isDebug) {
+          console.log(`⚙️ [DEBUG] Colecionador de Almas Mecânicas infectou ${target.name}`);
+        }
       }
     }
     this.lastNightDeaths = resolvedDeaths;
