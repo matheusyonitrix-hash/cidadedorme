@@ -117,12 +117,12 @@ function installSocketHandlers(io) {
     socket.emit('gameError', { message: err.message || 'Ocorreu um erro inesperado.' });
   }
 
-  function registerPlayer(socket, game, name) {
+  function registerPlayer(socket, game, name, { confirmationEvent = 'joinedRoom' } = {}) {
     if (playerRooms.has(socket.id)) throw new Error('Já estás ligado a uma oficina.');
     const player = game.addPlayer({ id: socket.id, name });
     playerRooms.set(socket.id, game.roomCode);
     socket.join(game.roomCode);
-    socket.emit('joinedRoom', { roomCode: game.roomCode, playerId: player.id });
+    socket.emit(confirmationEvent, { roomCode: game.roomCode, playerId: player.id });
     sendChatHistory(socket, game);
     socket.emit('lobbyChatHistory', activeRooms[game.roomCode].lobbyChatHistory || []);
     if (game.phase === 'LOBBY') {
@@ -174,7 +174,7 @@ function installSocketHandlers(io) {
   }
 
   io.on('connection', (socket) => {
-    socket.on('createRoom', ({ name, isDebug = false } = {}) => {
+    function createRoomForPlayer(name, isDebug = false) {
       try {
         if (playerRooms.has(socket.id)) throw new Error('Já estás ligado a uma oficina.');
         const code = makeRoomCode();
@@ -197,6 +197,37 @@ function installSocketHandlers(io) {
         const player = registerPlayer(socket, game, name);
         // Confirmação explícita usada pelo cliente para abrir o lobby.
         socket.emit('roomCreated', { roomCode: code, playerId: player.id });
+      } catch (err) { error(socket, err); }
+    }
+
+    socket.on('createRoom', ({ name, isDebug = false } = {}) => {
+      createRoomForPlayer(name, isDebug);
+    });
+
+    socket.on('findMatch', ({ name: playerName } = {}) => {
+      try {
+        if (playerRooms.has(socket.id)) throw new Error('Já estás ligado a uma oficina.');
+        const name = String(playerName || '').trim();
+        if (!name) throw new Error('Escreve o teu nome primeiro.');
+
+        // activeRooms expõe o estado atual para matchmaking. Confirmamos também
+        // o Game correspondente para evitar entrar numa sala expirada ou lotada.
+        const room = Object.values(activeRooms).find((candidate) => {
+          if (candidate.gameState !== 'LOBBY' || candidate.players.length >= 16 || candidate.players.length === 0) {
+            return false;
+          }
+          const game = games.get(candidate.code);
+          return Boolean(game && game.phase === 'LOBBY' && game.players.size < 16);
+        });
+
+        if (!room) {
+          const isDebug = name.toLocaleLowerCase('pt') === 'yokki_qa';
+          createRoomForPlayer(name, isDebug);
+          return;
+        }
+
+        const game = games.get(room.code);
+        registerPlayer(socket, game, name, { confirmationEvent: 'roomJoined' });
       } catch (err) { error(socket, err); }
     });
 

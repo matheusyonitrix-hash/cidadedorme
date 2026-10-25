@@ -461,8 +461,8 @@
   $('createRoom').onclick=()=>{
     const name=$('nameInput').value.trim();
     if(!name)return showToast('Escreve o teu nome primeiro.');
-    console.log("Botão clicado! Enviando nome:", name);
-    socket.emit('createRoom',{name});
+    console.log('Partida rápida solicitada para:', name);
+    socket.emit('findMatch', { name });
   };
   $('joinRoom').onclick=()=>{const name=$('nameInput').value.trim(),code=$('roomInput').value.trim();if(!name||!code)return showToast('Indica o teu nome e o código da sala.');socket.emit('joinRoom',{name,roomCode:code});};
   $('roomInput').addEventListener('input',e=>e.target.value=e.target.value.toUpperCase());
@@ -523,6 +523,7 @@
     }
   });
   socket.on('joinedRoom',enterRoom);
+  socket.on('roomJoined',enterRoom);
   socket.on('roomCreated',({roomCode:createdRoomCode,playerId:createdPlayerId}={})=>{
     if (leavingRoom) return;
     if(!createdRoomCode||!createdPlayerId){
