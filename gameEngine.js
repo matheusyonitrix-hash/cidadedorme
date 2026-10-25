@@ -29,7 +29,9 @@ function checkGameOver(room) {
   }
 
   const automatons = living.filter((player) => player.role === ROLES.AUTOMATON);
-  const automatonAlive = automatons.length > 0;
+  const neutralThreatAlive = living.some((player) =>
+    player.role === ROLES.AUTOMATON || player.role === ROLES.MAD_SCIENTIST
+  );
   const syndicate = living.filter((player) => getFaction(player.role) === 'syndicate').length;
   const alliance = living.filter((player) => getFaction(player.role) === 'steam').length;
 
@@ -38,10 +40,25 @@ function checkGameOver(room) {
   ))) {
     return room.finish('automaton', 'O Autómato Desgovernado tomou a cidade.');
   }
-  if (!automatonAlive && syndicate === 0) {
+  if (syndicate === 0) {
     return room.finish('steam', 'A Aliança de Vapor desmantelou o Sindicato Rebelde!');
   }
-  if (!automatonAlive && syndicate >= alliance) {
+
+  // Um empate no início de uma sala curta ainda deixa a Aliança chegar ao
+  // Tribunal de Bronze. Só Inventor com munição e Ferreiro com cargas podem
+  // impedir a exceção de paridade depois de a votação da fase ter acontecido.
+  const allianceCanStillAttack = living.some((player) =>
+    (player.role === ROLES.INVENTOR && player.bullets > 0) ||
+    (player.role === ROLES.BRONZE_SMITH && (player.bronzeCharges > 0 || player.isAlerted))
+  );
+  const smallRoomTieBeforeTribunal = living.length <= 4 && syndicate === alliance &&
+    (room.phase === 'NIGHT' || room.phase === 'DAY');
+  const syndicateStrictMajority = syndicate > alliance;
+  const syndicateParityWithoutAllianceAttack = syndicate === alliance && !allianceCanStillAttack && !smallRoomTieBeforeTribunal;
+
+  // Dissidentes ainda vivos podem alterar o resultado contra o Sindicato;
+  // não terminamos a partida enquanto o Autómato ou o Cientista estiver ativo.
+  if (!neutralThreatAlive && (syndicateStrictMajority || syndicateParityWithoutAllianceAttack)) {
     return room.finish('syndicate', 'O Sindicato Rebelde tomou o controlo da cidade!');
   }
   return null;
