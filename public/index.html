@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="pt-PT">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#101513">
+  <title>A Cidade Dorme — Distrito da Fuligem</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css?v=20261024-14">
+</head>
+<body>
+  <main id="landing" class="landing">
+    <div class="landing-orbit orbit-one"></div><div class="landing-orbit orbit-two"></div>
+    <div class="landing-inner">
+      <div class="eyebrow"><span class="eyebrow-line"></span> JOGO SOCIAL · 2–16 JOGADORES <span class="eyebrow-line"></span></div>
+      <div class="sigil">⚙</div>
+      <h1>A Cidade<br><em>Dorme</em></h1>
+      <p class="landing-copy">Quando a última caldeira se apaga, alguém<br>move-se entre as sombras.</p>
+      <div class="join-card">
+        <label for="nameInput">O teu nome</label>
+        <input id="nameInput" maxlength="20" placeholder="Como te chamam?" autocomplete="nickname">
+        <button id="createRoom" class="button button-primary">Criar uma oficina <span>↗</span></button>
+        <div class="divider"><span></span> ou entra numa sala <span></span></div>
+        <div class="join-row"><input id="roomInput" maxlength="5" placeholder="CÓDIGO" autocomplete="off"><button id="joinRoom" class="button button-secondary">Entrar</button></div>
+      </div>
+      <p class="landing-foot">DISTRITO DA FULIGEM <span>·</span> ANO 1897</p>
+    </div>
+  </main>
+
+  <main id="game" class="game hidden">
+    <header class="topbar"><button id="btn-back-to-menu" type="button">⬅️ Voltar para o Menu</button><a class="brand" href="#"><span>⚙</span> A CIDADE <em>DORME</em></a><div class="room-badge"><div class="room-code-line">OFICINA <strong id="roomCodeLabel">—</strong><button id="copyCode" title="Copiar código">⧉</button></div><button id="classes-manual-open" class="manual-open" type="button" aria-haspopup="dialog" aria-controls="classes-modal">📜 Manual de Classes</button></div><div class="topbar-status"><button id="audioToggle" class="audio-toggle" type="button" aria-pressed="false" aria-label="Ativar som dos cliques" title="Ativar som dos cliques">🔇 CLIQUES MUDOS</button><span class="connection-dot"></span><span id="connectionLabel">LIGADO</span></div></header>
+    <section id="lobbyPanel" class="lobby-panel hidden"><div class="lobby-copy"><div class="eyebrow">A OFICINA ESTÁ ABERTA</div><h2>Reúne a tua<br><em>tripulação.</em></h2><p>São precisos entre 2 e 16 jogadores para a sirene tocar.</p><div id="lobbyCount" class="lobby-count">01 <span>/ 02 MÍNIMO</span></div><div class="lobby-buttons"><button id="readyButton" class="button button-secondary">Marcar como pronto</button><button id="startGame" class="button button-primary">Dar início à noite <span>↗</span></button></div><p id="hostHint" class="subtle"></p></div><div class="lobby-right-column"><div class="lobby-roster"><div class="section-kicker">NA OFICINA <span id="rosterCount">00</span></div><div id="lobbyPlayers" class="roster-list"></div></div><section class="lobby-chat-container" aria-label="Chat da oficina"><div class="lobby-chat-heading"><div><div class="section-kicker">FREQUÊNCIA LOCAL</div><h3>Conversa da Oficina</h3></div><span>PRÉ-JOGO</span></div><div id="lobby-chat-messages" class="lobby-chat-messages" aria-live="polite"><div class="lobby-chat-empty">A oficina está em silêncio.<br>Inicia a conversa com a tripulação.</div></div><form class="lobby-chat-controls" id="lobby-chat-form"><input type="text" id="lobby-chat-input" maxlength="500" placeholder="Converse com a oficina..." autocomplete="off"><button type="submit" id="btn-send-lobby-message">Enviar</button></form></section></div></section>
+    <section id="gamePanel" class="game-layout hidden">
+      <aside class="left-column"><div class="phase-card"><div id="phaseIcon" class="phase-icon">☾</div><div class="section-kicker" id="dayLabel">NOITE 01</div><h2 id="phaseTitle">A cidade<br><em>dorme.</em></h2><div class="timer-track"><div id="timerBar"></div></div><div class="timer-label"><span id="phaseHint">Ouve o silêncio.</span><strong id="timerText">45s</strong></div></div>
+        <div class="role-card"><div class="section-kicker">A TUA IDENTIDADE</div><div class="role-stamp">⚙</div><h3 id="roleName">—</h3><span id="roleFaction" class="faction-tag">—</span><p id="roleDescription">—</p><div id="ammoInfo" class="ammo hidden"></div></div>
+        <div id="syndicateBox" class="syndicate-box hidden"><div class="section-kicker">A TUA TRIPULAÇÃO</div><div id="syndicateList"></div></div>
+      </aside>
+      <section class="center-column"><div class="player-panel"><div class="panel-heading"><div><div class="section-kicker">DISTRITO DA FULIGEM</div><h2>Habitantes <span id="aliveCount">00</span></h2></div><div class="live-label"><i></i> AO VIVO</div></div><div id="playersList" class="players-list"></div><div id="actionArea" class="action-area"></div></div>
+        <div class="log-panel"><div class="panel-heading compact"><div class="section-kicker">CRÓNICA DA CIDADE</div><button id="clearLog" class="text-button">LIMPAR</button></div><div id="eventLog" class="event-log"></div></div>
+      </section>
+      <aside class="right-column"><div class="chat-panel"><div class="chat-heading"><div><div class="section-kicker">TRANSMISSÃO</div><h3>Frequência</h3></div><span id="chatScope" class="chat-scope">DISTRITO</span></div><div id="chatMessages" class="chat-messages"><div class="chat-empty">As ondas estão em silêncio.<br>Envia a primeira mensagem.</div></div><form id="chatForm" class="chat-form"><input id="chatInput" maxlength="500" placeholder="Escreve uma mensagem…" autocomplete="off"><button aria-label="Enviar mensagem">↗</button></form></div><div class="rules-card"><div class="section-kicker">PROTOCOLO</div><p>À noite, o Sindicato pode comunicar em privado. De dia, todos os habitantes podem conversar e votar quem será levado à Fornalha.</p></div></aside>
+    </section>
+    <section id="victoryBanner" class="victory-banner hidden" role="dialog" aria-modal="true" aria-labelledby="victoryText">
+      <div id="victoryPanel" class="victory-panel">
+        <div class="victory-gear" aria-hidden="true">⚙</div>
+        <div class="eyebrow">RELATÓRIO FINAL · DISTRITO DA FULIGEM</div>
+        <h1 id="victoryText">—</h1>
+        <p id="victorySubtext" class="victory-subtext">A partida terminou.</p>
+        <div class="survivor-heading section-kicker">SOBREVIVERAM À NOITE</div>
+        <ul id="survivorList" class="survivor-list"></ul>
+        <p id="returnHint" class="return-hint"></p>
+        <button id="backToLobby" class="button button-primary">Retornar para a Oficina <span>↗</span></button>
+      </div>
+    </section>
+    <section id="roleRevealModal" class="role-reveal hidden" role="dialog" aria-modal="true" aria-labelledby="revealRoleName">
+      <div class="steam-cloud cloud-one"></div><div class="steam-cloud cloud-two"></div>
+      <div id="roleRevealCard" class="role-reveal-card">
+        <div class="gear-stage" aria-hidden="true"><span class="reveal-gear gear-large">⚙</span><span class="reveal-gear gear-small">⚙</span></div>
+        <div class="reveal-copy">
+          <div class="eyebrow">DOSSIÊ CONFIDENCIAL · DISTRITO DA FULIGEM</div>
+          <p id="revealPlayerName" class="reveal-player-name"></p>
+          <h2 id="revealRoleName">—</h2>
+          <div id="revealFaction" class="reveal-faction"><span id="revealFactionIcon">◆</span><span id="revealFactionName">—</span></div>
+          <p id="revealObjective" class="reveal-objective">—</p>
+          <button id="closeRoleReveal" class="button button-primary">Entendido, fechar escotilha <span>↗</span></button>
+        </div>
+      </div>
+    </section>
+    <section id="classes-modal" class="classes-modal hidden" role="dialog" aria-modal="true" aria-labelledby="classes-modal-title" aria-hidden="true">
+      <div class="classes-backdrop" data-close-classes="true"></div>
+      <div class="classes-dialog" role="document">
+        <header class="classes-header">
+          <div>
+            <div class="eyebrow">ARQUIVO DE FUNÇÕES · DISTRITO DA FULIGEM</div>
+            <h2 id="classes-modal-title">O Guia do Inventor <span>— Funções do Distrito</span></h2>
+            <p>Conhece as engrenagens que movem cada facção antes de a sirene tocar.</p>
+          </div>
+          <button id="classes-modal-close" class="classes-close" type="button" aria-label="Fechar registos">×</button>
+        </header>
+        <div class="classes-content">
+          <section class="class-faction steam-faction" aria-labelledby="classes-steam-title">
+            <h3 id="classes-steam-title"><span>✦</span> Aliança de Vapor</h3>
+            <div class="class-grid">
+              <article class="class-entry"><h4>Relojoeiro</h4><p>Inspeciona uma pessoa por noite para descobrir a sua fação. A Cortina de Fumo e o Falsificador de Patentes podem fazê-la parecer da Aliança.</p></article>
+              <article class="class-entry"><h4>Alquimista</h4><p>Protege uma pessoa durante a noite contra ataques. A proteção é aplicada antes da resolução das eliminações.</p></article>
+              <article class="class-entry"><h4>Inventor</h4><p>Tem dois disparos para usar durante o dia. Se eliminar um membro inocente da Aliança, também morre.</p></article>
+              <article class="class-entry"><h4>Engenheiro de Tesla</h4><p>Escolhe uma pessoa para vigiar durante a noite e recebe, em privado, a lista de jogadores que a visitaram. Ações redirecionadas contam pelo destino final.</p></article>
+              <article class="class-entry"><h4>Ferreiro de Bronze</h4><p>Ativa a forja numa noite. Qualquer jogador que o visite nessa noite é eliminado; a Alquimista ainda pode proteger um visitante.</p></article>
+              <article class="class-entry"><h4>Mecânico de Manutenção</h4><p>Escolhe um jogador já eliminado e restaura-o uma vez por partida. A ressurreição é resolvida antes do amanhecer.</p></article>
+              <article class="class-entry"><h4>Cronometrista</h4><p>Ativa o retrocesso do tempo durante a noite. Se houver uma vítima de ataque, impede uma eliminação. Só pode fazê-lo uma vez por partida; o recurso só é gasto quando cancela uma morte.</p></article>
+              <article class="class-entry"><h4>Armadilheiro de Pressão</h4><p>Escolhe uma pessoa para receber uma armadilha naquela noite. Quem a visitar fica atordoado e perde a própria ação na noite seguinte. A armadilha não elimina o visitante.</p></article>
+              <article class="class-entry"><h4>Engenheiro Reverso</h4><p>À noite, analisa uma pessoa eliminada pela votação e escolhe um dos jogadores que votaram nela. Descobre em privado o cargo exato desse suspeito.</p></article>
+              <article class="class-entry"><h4>Fabricante de Blindagem</h4><p>Uma vez por partida, distribui placas de titânio a até três jogadores vivos. Cada placa absorve e cancela o próximo ataque noturno recebido pelo seu portador.</p></article>
+              <article class="class-entry"><h4>Operário</h4><p>Não tem ação especial. Discute durante o dia, vota na Fornalha e ajuda a identificar o Sindicato.</p></article>
+            </div>
+          </section>
+          <section class="class-faction syndicate-faction" aria-labelledby="classes-syndicate-title">
+            <h3 id="classes-syndicate-title"><span>◆</span> Sindicato Rebelde</h3>
+            <div class="class-grid">
+              <article class="class-entry"><h4>Sabotador</h4><p>Coordena o ataque noturno do Sindicato. Os votos dos rebeldes vivos determinam o alvo mais escolhido.</p></article>
+              <article class="class-entry"><h4>Cortina de Fumo</h4><p>Disfarça um aliado por noite para que o Relojoeiro o identifique como membro da Aliança.</p></article>
+              <article class="class-entry"><h4>Espião Industrial</h4><p>Investiga uma pessoa por noite e descobre o cargo exato. Também pode votar, em privado, no alvo do ataque do Sindicato.</p></article>
+              <article class="class-entry"><h4>Falsificador de Patentes</h4><p>Passivamente, aparece como membro da Aliança nas investigações de fação do Relojoeiro. O Espião Industrial ainda consegue identificar o seu cargo exato.</p></article>
+              <article class="class-entry"><h4>Contrabandista de Éter</h4><p>Escolhe duas pessoas vivas por noite para trocar as identidades de inspeção. Se o Relojoeiro investigar uma delas, recebe a fação e a identidade aparente da outra.</p></article>
+              <article class="class-entry"><h4>Informador Clandestino</h4><p>Silencia uma pessoa durante a noite. Essa pessoa não pode enviar mensagens no chat durante o dia seguinte; continua a poder votar e usar outras funções normalmente.</p></article>
+              <article class="class-entry"><h4>Banqueiro de Cobre</h4><p>Suborna uma pessoa viva durante a noite. Na votação do dia seguinte, o voto dessa pessoa é automaticamente igual ao do Banqueiro, incluindo uma abstenção.</p></article>
+            </div>
+          </section>
+          <section class="class-faction neutral-faction" aria-labelledby="classes-neutral-title">
+            <h3 id="classes-neutral-title"><span>◈</span> Dissidentes</h3>
+            <div class="class-grid">
+              <article class="class-entry"><h4>Colecionador de Sucata</h4><p>Vence sozinho se for escolhido pela votação diurna e eliminado na Fornalha.</p></article>
+              <article class="class-entry"><h4>Autómato Desgovernado</h4><p>Escolhe uma vítima por noite e é imune a ataques noturnos. Vence quando resta apenas ele, ou ele e um Operário.</p></article>
+              <article class="class-entry"><h4>Cientista Louco</h4><p>Oleia uma pessoa por noite ou detona todos os alvos oleados. Vence sozinho se a detonação o deixar como único sobrevivente.</p></article>
+              <article class="class-entry"><h4>Coveiro de Sucata</h4><p>Escolhe um jogador com ação noturna e um novo alvo. A ação desse jogador é redirecionada para o destino escolhido; o jogador afetado recebe um aviso privado.</p></article>
+              <article class="class-entry"><h4>Colecionador de Almas Mecânicas</h4><p>Injeta engrenagens num jogador vivo por noite. O progresso persiste; vence imediatamente quando todos os jogadores ainda vivos estão mecanizados por ele.</p></article>
+              <article class="class-entry class-entry-inactive"><h4>Mutante de Óleo <span>REGISTO ARQUIVADO</span></h4><p>Esta classe ainda não está ativa nas partidas: não é atribuída nem possui objetivo ou ação disponíveis nesta versão.</p></article>
+            </div>
+          </section>
+        </div>
+        <footer class="classes-footer"><span>MANUAL DO DISTRITO · EDIÇÃO 1897</span><button id="classes-modal-close-footer" class="button button-primary" type="button">Fechar Registos <span>×</span></button></footer>
+      </div>
+    </section>
+    <div id="toast" class="toast hidden"></div>
+  </main>
+  <script src="/socket.io/socket.io.js"></script><script src="/app.js?v=20261024-18"></script>
+</body>
+</html>
