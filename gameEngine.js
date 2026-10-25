@@ -791,6 +791,9 @@ class Game {
     if (this.phase !== 'GAMEOVER') throw new Error('Só é possível reiniciar uma partida terminada.');
     clearTimeout(this.timer);
     this.timer = null; this.deadline = null; this.phase = 'LOBBY'; this.day = 0;
+    // O sinal ended também é publicado ao cliente; deixá-lo true mantinha
+    // a tela de fim de jogo aberta mesmo depois de a fase voltar ao lobby.
+    this.ended = false;
     this.deadPlayers = []; this.log = []; this.votes.clear(); this.syndicateVotes.clear(); this.actions.clear();
     this.winner = null; this.winnerFaction = null; this.gameOverResult = null; this.lastElimination = null;
     this.testMode = false;

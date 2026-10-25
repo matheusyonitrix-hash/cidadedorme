@@ -211,7 +211,9 @@
     $('chatForm').classList.toggle('chat-silenced', chatIsSilenced);
     document.body.classList.toggle('night-phase', state.phase === 'NIGHT');
     const inLobby = state.phase === 'LOBBY';
-    const isGameOver = state.phase === 'GAMEOVER' || state.ended;
+    // A fase é a fonte de verdade. Uma flag ended antiga não deve sobrepor
+    // uma transição já recebida para LOBBY.
+    const isGameOver = state.phase === 'GAMEOVER';
     lobbyPanel.classList.toggle('hidden', !inLobby);
     gamePanel.classList.toggle('hidden', inLobby || isGameOver);
     $('victoryBanner').classList.toggle('hidden', !isGameOver);
@@ -469,7 +471,12 @@
   $('startGame').onclick=()=>socket.emit('startGame');
   $('readyButton').onclick=()=>{const me=state?.players.find(p=>p.id===playerId);if(me)socket.emit('setReady',{isReady:!me.isReady});};
   $('copyCode').onclick=async()=>{try{await navigator.clipboard.writeText(roomCode);showToast('Código copiado.');}catch{showToast(`Código da sala: ${roomCode}`);}};
-  $('backToLobby').onclick=()=>{if(!state?.players.find(p=>p.id===playerId)?.host)return;socket.emit('returnToLobby');};
+  $('backToLobby').onclick=()=>{
+    if(!state?.players.find(p=>p.id===playerId)?.host)return;
+    $('backToLobby').disabled=true;
+    $('backToLobby').textContent='A preparar a Oficina…';
+    socket.emit('returnToLobby');
+  };
   const backToMenuButton = $('btn-back-to-menu');
   if (backToMenuButton) backToMenuButton.addEventListener('click', () => {
     leaveWorkshop();
@@ -542,12 +549,45 @@
     document.body.classList.remove('night-phase');
     render();
   });
-  socket.on('roomReset',()=>{
+  socket.on('roomReset',({ roomCode: resetRoomCode } = {})=>{
     gameOverPayload=null;revealedRole=null;selectedTarget=null;
+    clearTimeout(revealTimer);
+    if (resetRoomCode) roomCode = resetRoomCode;
+    if (state) {
+      state = {
+        ...state,
+        roomCode: roomCode || state.roomCode,
+        phase: 'LOBBY', day: 0, ended: false, winner: null, winnerFaction: null,
+        survivors: [], deadPlayers: [], log: [], voteCount: 0, voteCounts: {},
+        roleInfo: null, syndicate: [],
+        players: (state.players || []).map(player => ({
+          ...player, alive: true, isReady: false, isSilenced: false,
+          role: null, voted: false
+        })),
+        me: state.me ? {
+          ...state.me, role: null, alive: true, bullets: 2, actionSubmitted: false,
+          voted: false, isSilenced: false, silencedToday: false
+        } : null
+      };
+    }
     $('chatMessages').innerHTML='<div class="chat-empty">A oficina foi reiniciada.<br>As ondas aguardam.</div>';
     $('lobby-chat-messages').innerHTML='<div class="lobby-chat-empty">A oficina está em silêncio.<br>Inicia a conversa com a tripulação.</div>';
+    $('victoryBanner').classList.add('hidden');
+    $('survivorList').replaceChildren();
+    $('victoryText').textContent='—';
+    $('victorySubtext').textContent='A partida terminou.';
+    $('chatInput').disabled=false;
+    $('chatInput').placeholder=chatPlaceholder;
+    $('chatInput').classList.remove('silenced-input');
+    $('chatForm').classList.remove('chat-silenced');
+    $('lobby-chat-input').disabled=false;
+    $('btn-send-lobby-message').disabled=false;
+    $('lobby-chat-input').placeholder='Converse com a oficina...';
     document.body.classList.remove('night-phase','game-over','role-reveal-open');
     $('roleRevealModal').classList.add('hidden');
+    lobbyPanel.classList.remove('hidden');
+    gamePanel.classList.add('hidden');
+    if (state) render();
   });
   socket.on('dayStarted',event=>{
     document.body.classList.remove('night-phase');
