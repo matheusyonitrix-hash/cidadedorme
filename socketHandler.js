@@ -12,6 +12,7 @@ const COSMETIC_PRICES = Object.freeze({
   skin_borda_ouro: 600
 });
 const COSMETIC_TITLES = Object.freeze({ titulo_mestre_caldeira: 'Mestre da Caldeira' });
+const COSMETIC_BORDERS = Object.freeze({ skin_borda_bronze: 'bronze', skin_borda_ouro: 'gold' });
 
 function normalizeUsername(value) {
   return String(value || '').trim().toLocaleLowerCase('pt');
@@ -43,12 +44,16 @@ function accountPayload(player) {
     },
     unlocked_cosmetics: player.unlocked_cosmetics || [],
     equipped_cosmetic: player.equipped_cosmetic || null,
+    equipped_border: player.equipped_border || null,
     match_history: player.match_history || [],
     stats: {
       games_played: player.stats?.games_played || 0,
       victories: player.stats?.victories || 0,
       defeats: player.stats?.defeats || 0
-    }
+    },
+    roles_stats: player.roles_stats instanceof Map
+      ? Object.fromEntries(player.roles_stats.entries())
+      : (player.roles_stats?.toObject?.() || player.roles_stats || {})
   };
 }
 
@@ -73,7 +78,7 @@ function installSocketHandlers(io) {
     return [...game.players.values()].map((p) => ({
       id: p.id, name: p.name, isReady: Boolean(p.isReady), isAlive: Boolean(p.alive),
       isHost: Boolean(p.host), isSilenced: Boolean(p.isSilenced),
-      isDisconnected: Boolean(p.isDisconnected), title: p.cosmeticTitle || null
+      isDisconnected: Boolean(p.isDisconnected), title: p.cosmeticTitle || null, border: p.cosmeticBorder || null
     }));
   }
 
@@ -232,6 +237,7 @@ function installSocketHandlers(io) {
       player.accountUsername = socket.data.account.username;
       player.accountLevel = socket.data.account.level || 1;
       player.cosmeticTitle = COSMETIC_TITLES[socket.data.account.equipped_cosmetic] || null;
+      player.cosmeticBorder = COSMETIC_BORDERS[socket.data.account.equipped_border] || null;
     }
     playerRooms.set(socket.id, game.roomCode);
     socket.join(game.roomCode);
@@ -367,7 +373,7 @@ function installSocketHandlers(io) {
           xp: 0
         });
         const account = accountPayload(player);
-        socket.data.account = { id: account.id, username: account.username, level: account.level, equipped_cosmetic: account.equipped_cosmetic, unlocked_cosmetics: account.unlocked_cosmetics };
+      socket.data.account = { id: account.id, username: account.username, level: account.level, equipped_cosmetic: account.equipped_cosmetic, equipped_border: account.equipped_border, unlocked_cosmetics: account.unlocked_cosmetics };
         socket.emit('registerSuccess', { account });
       } catch (err) {
         const message = err.code === 11000 ? 'Esse usuário já está registado.' : err.message;
@@ -390,7 +396,7 @@ function installSocketHandlers(io) {
           throw new Error('Usuário ou senha incorretos.');
         }
         const account = accountPayload(player);
-        socket.data.account = { id: account.id, username: account.username, level: account.level, equipped_cosmetic: account.equipped_cosmetic, unlocked_cosmetics: account.unlocked_cosmetics };
+        socket.data.account = { id: account.id, username: account.username, level: account.level, equipped_cosmetic: account.equipped_cosmetic, equipped_border: account.equipped_border, unlocked_cosmetics: account.unlocked_cosmetics };
         socket.emit('loginSuccess', { account });
       } catch (err) {
         socket.emit('accountError', { action: 'login', message: err.message || 'Não foi possível iniciar sessão.' });
@@ -440,30 +446,40 @@ function installSocketHandlers(io) {
       }
     });
 
-    socket.on('equipCosmetic', async ({ cosmeticId } = {}) => {
+    socket.on('equipCosmetic', async (selection = {}) => {
       try {
         if (!socket.data.account?.username) throw new Error('Inicia sessão para equipar um artigo.');
-        if (cosmeticId !== null && !COSMETIC_TITLES[cosmeticId]) throw new Error('Este artigo não pode ser equipado como título.');
+        const hasTitle = Object.hasOwn(selection, 'titleId') || Object.hasOwn(selection, 'cosmeticId');
+        const hasBorder = Object.hasOwn(selection, 'borderId');
+        const titleId = hasTitle ? (selection.titleId ?? selection.cosmeticId ?? null) : socket.data.account.equipped_cosmetic || null;
+        const borderId = hasBorder ? (selection.borderId || null) : socket.data.account.equipped_border || null;
+        if (titleId && !Object.hasOwn(COSMETIC_TITLES, titleId)) throw new Error('Este título não pode ser equipado.');
+        if (borderId && !Object.hasOwn(COSMETIC_BORDERS, borderId)) throw new Error('Esta moldura não pode ser equipada.');
         const filter = { username: socket.data.account.username };
-        if (cosmeticId) filter.unlocked_cosmetics = cosmeticId;
+        const requiredCosmetics = [titleId, borderId].filter(Boolean);
+        if (requiredCosmetics.length) filter.unlocked_cosmetics = { $all: requiredCosmetics };
         const profile = await Player.findOneAndUpdate(
           filter,
-          { $set: { equipped_cosmetic: cosmeticId || null } },
+          { $set: { equipped_cosmetic: titleId, equipped_border: borderId } },
           { new: true, runValidators: true }
         );
-        if (!profile) throw new Error('Adquire o título antes de o equipar.');
+        if (!profile) throw new Error('Adquire os itens antes de os equipar.');
         socket.data.account.equipped_cosmetic = profile.equipped_cosmetic || null;
+        socket.data.account.equipped_border = profile.equipped_border || null;
         socket.data.account.unlocked_cosmetics = profile.unlocked_cosmetics || [];
 
         const game = getGame(socket);
         if (game) {
           const player = game.getPlayer(socket.id);
-          if (player) player.cosmeticTitle = COSMETIC_TITLES[cosmeticId] || null;
+          if (player) {
+            player.cosmeticTitle = COSMETIC_TITLES[titleId] || null;
+            player.cosmeticBorder = COSMETIC_BORDERS[borderId] || null;
+          }
           emitRoom(game);
         }
         socket.emit('cosmeticEquipped', { account: accountPayload(profile) });
       } catch (err) {
-        socket.emit('purchaseError', { message: err.message || 'Não foi possível equipar este artigo.' });
+        socket.emit('cosmeticEquipError', { message: err.message || 'Não foi possível equipar este artigo.' });
       }
     });
 

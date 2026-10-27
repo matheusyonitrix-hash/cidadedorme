@@ -156,6 +156,7 @@
     $('accountProgress').classList.remove('hidden');
     $('accountProgressLabel').textContent = `${profile.username} · NÍVEL ${progress.level} · XP ${progress.xpIntoLevel}/${progress.xpRequired} · ${coins} COBRE`;
     $('accountXpBar').style.width = `${progress.percent}%`;
+    renderMechanicalProfile(profile, progress, coins);
     $('openHistoryInGame').classList.remove('hidden');
     renderMatchHistory(profile.match_history || []);
     $('openBazarInGame').classList.remove('hidden');
@@ -163,6 +164,48 @@
     $('accountWelcome').textContent = `Bem-vindo, ${profile.username}. O teu progresso está guardado na caldeira.`;
     $('accountForm').classList.add('hidden');
     $('accountActions').classList.remove('hidden');
+  }
+
+  function renderMechanicalProfile(profile, progress, coins) {
+    const username = profile.username || 'Mecânico';
+    $('profileName').textContent = username;
+    $('profileAvatar').textContent = username.slice(0, 1).toLocaleUpperCase('pt');
+    $('profileLevel').textContent = `NÍVEL ${progress.level}`;
+    $('profileXpBar').style.width = `${progress.percent}%`;
+    $('profileXpLabel').textContent = `${progress.xpIntoLevel} / ${progress.xpRequired} XP`;
+    $('profileCoins').textContent = String(coins);
+
+    const unlocked = new Set(profile.unlocked_cosmetics || []);
+    const allTitles = cosmetics.filter(item => item.kind === 'TÍTULO');
+    $('equippedTitle').innerHTML = '<option value="">Sem título</option>' + allTitles.map(item =>
+      unlocked.has(item.id)
+        ? `<option value="${item.id}">${item.name}</option>`
+        : `<option value="" disabled>🔒 ${item.name} · indisponível</option>`
+    ).join('');
+    $('equippedBorder').innerHTML = '<option value="">Padrão do Distrito</option>' + cosmetics.filter(item => item.kind === 'MOLDURA').map(item =>
+      unlocked.has(item.id)
+        ? `<option value="${item.id}">${item.name}</option>`
+        : `<option value="" disabled>🔒 ${item.name} · indisponível</option>`
+    ).join('');
+    $('equippedTitle').value = profile.equipped_cosmetic || '';
+    $('equippedBorder').value = profile.equipped_border || '';
+
+    const stats = profile.stats || {};
+    const victories = Number(stats.victories) || 0;
+    const defeats = Number(stats.defeats) || 0;
+    const gamesPlayed = Number(stats.games_played) || victories + defeats;
+    $('profileWins').textContent = String(victories);
+    $('profileDefeats').textContent = String(defeats);
+    $('profileWinRate').textContent = `${gamesPlayed ? Math.round(victories / gamesPlayed * 100) : 0}%`;
+    const roleStats = profile.roles_stats instanceof Map ? Object.fromEntries(profile.roles_stats) : (profile.roles_stats || {});
+    const popular = Object.entries(roleStats)
+      .map(([role, data]) => ({ name: roleNames[role] || role, played: Number(data?.played) || 0, won: Number(data?.won) || 0 }))
+      .filter(role => role.played > 0)
+      .sort((a, b) => b.played - a.played)
+      .slice(0, 3);
+    $('profileRoleStats').innerHTML = popular.length
+      ? popular.map(role => `<div class="role-stat-row"><span>${escapeHtml(role.name)}</span><span>${role.played} partidas</span><b>${role.won} vitórias</b></div>`).join('')
+      : '<p class="profile-no-stats">Ainda não há partidas registadas por classe.</p>';
   }
 
   function setAuthBusy(isBusy) {
@@ -349,7 +392,7 @@
       $('rosterCount').textContent = String(state.players.length).padStart(2,'0');
       const lobbySlots = Array.from({ length: 16 }, (_, index) => state.players[index] || null);
       $('lobbyPlayers').innerHTML = lobbySlots.map((p, index) => p
-        ? `<div class="roster-row ${p.isDisconnected?'roster-disconnected':''}"><div class="avatar">${escapeHtml(p.name.slice(0,1).toUpperCase())}</div><span>${escapeHtml(p.name)}</span>${p.title?`<small class="player-cosmetic-title">${escapeHtml(p.title)}</small>`:''}${p.isDisconnected?'<small class="disconnect-mark">A RECONECTAR</small>':''}${p.host?'<span class="host-mark">ANFITRIÃO</span>':''}${p.isReady?'<span class="ready-mark">PRONTO</span>':''}</div>`
+        ? `<div class="roster-row ${p.isDisconnected?'roster-disconnected':''} ${p.border==='bronze'?'frame-bronze':p.border==='gold'?'frame-gold':''}"><div class="avatar">${escapeHtml(p.name.slice(0,1).toUpperCase())}</div><span>${escapeHtml(p.name)}</span>${p.title?`<small class="player-cosmetic-title">${escapeHtml(p.title)}</small>`:''}${p.isDisconnected?'<small class="disconnect-mark">A RECONECTAR</small>':''}${p.host?'<span class="host-mark">ANFITRIÃO</span>':''}${p.isReady?'<span class="ready-mark">PRONTO</span>':''}</div>`
         : `<div class="roster-row empty"><div class="avatar">${String(index + 1).padStart(2,'0')}</div><span>[Vago]</span></div>`).join('');
       const me = state.players.find(p=>p.id===playerId);
       $('readyButton').textContent = me?.isReady ? 'Cancelar pronto' : 'Marcar como pronto';
@@ -396,7 +439,7 @@
       const bribedClass = self && state.me?.bribeVoteControlled ? 'bribed-vote' : '';
       const bribeBadge = self && state.me?.bribeVoteLocked ? '<span class="bribe-badge" title="O teu voto foi confiscado">🪙 VOTO HERDADO</span>' : '';
       const directSyndicateTarget = canVoteSyndicateAttack || (state.phase === 'NIGHT' && state.me?.role === 'SABOTEUR' && canTarget);
-      return `<div class="player-row ${p.alive?'':'dead'} ${p.isDisconnected?'player-disconnected':''} ${selected?'selected':''} ${state.phase==='VOTING'?'voting-card':''} ${bribedClass} ${directSyndicateTarget?'direct-target':''}" ${directSyndicateTarget?`data-player-target="${escapeHtml(p.id)}"`:''}>${badge}<div class="player-avatar">${p.alive?'⚙':'†'}</div><span class="player-name">${escapeHtml(p.name)}${self?' (tu)':''}${p.title?` <small class="player-cosmetic-title">${escapeHtml(p.title)}</small>`:''}</span>${bribeBadge}${role?`<span class="player-role">${escapeHtml(role)}</span>`:`<span class="player-state ${p.alive?'alive':'dead'}">${p.alive?(p.isDisconnected?'[A RECONECTAR]':'VIVO'):'[DESTRUÍDO]'}</span>`}${directSyndicateTarget?'<span class="direct-target-hint">ALVO · CLICAR</span>':''}${controls}</div>`;
+      return `<div class="player-row ${p.alive?'':'dead'} ${p.border==='bronze'?'frame-bronze':p.border==='gold'?'frame-gold':''} ${p.isDisconnected?'player-disconnected':''} ${selected?'selected':''} ${state.phase==='VOTING'?'voting-card':''} ${bribedClass} ${directSyndicateTarget?'direct-target':''}" ${directSyndicateTarget?`data-player-target="${escapeHtml(p.id)}"`:''}>${badge}<div class="player-avatar">${p.alive?'⚙':'†'}</div><span class="player-name">${escapeHtml(p.name)}${self?' (tu)':''}${p.title?` <small class="player-cosmetic-title">${escapeHtml(p.title)}</small>`:''}</span>${bribeBadge}${role?`<span class="player-role">${escapeHtml(role)}</span>`:`<span class="player-state ${p.alive?'alive':'dead'}">${p.alive?(p.isDisconnected?'[A RECONECTAR]':'VIVO'):'[DESTRUÍDO]'}</span>`}${directSyndicateTarget?'<span class="direct-target-hint">ALVO · CLICAR</span>':''}${controls}</div>`;
     }).join('');
   }
   function quickNightAction(role) {
@@ -620,6 +663,22 @@
   $('openHistoryInGame').addEventListener('click', openHistory);
   $('closeHistory').addEventListener('click', closeHistory);
   $('history-modal').addEventListener('click', event => { if (event.target === $('history-modal')) closeHistory(); });
+  $('togglePlayerProfile').addEventListener('click', () => {
+    const panel = $('playerProfilePanel');
+    const isOpen = panel.classList.toggle('is-open');
+    $('togglePlayerProfile').setAttribute('aria-expanded', String(isOpen));
+    panel.setAttribute('aria-hidden', String(!isOpen));
+  });
+  const saveProfileCosmetics = () => {
+    if (!accountProfile) return;
+    $('profileFeedback').textContent = 'A gravar o teu equipamento…';
+    socket.emit('equipCosmetic', {
+      titleId: $('equippedTitle').value || null,
+      borderId: $('equippedBorder').value || null
+    });
+  };
+  $('equippedTitle').addEventListener('change', saveProfileCosmetics);
+  $('equippedBorder').addEventListener('change', saveProfileCosmetics);
   $('closeBazar').addEventListener('click', closeBazar);
   $('bazar-modal').addEventListener('click', event => { if (event.target === $('bazar-modal')) closeBazar(); });
   $('bazarItems').addEventListener('click', event => {
@@ -742,8 +801,13 @@
   });
   socket.on('cosmeticEquipped', ({ account } = {}) => {
     if (account) renderAccountProfile(account);
-    $('bazarFeedback').textContent = account?.equipped_cosmetic ? 'Título equipado. A tripulação já o consegue ver.' : 'Título removido.';
+    $('bazarFeedback').textContent = 'Personalização guardada no perfil.';
+    $('profileFeedback').textContent = 'Personalização guardada. A tripulação verá a alteração na oficina.';
     renderBazar();
+  });
+  socket.on('cosmeticEquipError', ({ message } = {}) => {
+    $('profileFeedback').textContent = message || 'Não foi possível guardar a personalização.';
+    if (accountProfile) renderMechanicalProfile(accountProfile, levelProgress(accountProfile), Number(accountProfile.currencies?.copper_coins) || 0);
   });
   socket.on('purchaseError', ({ message } = {}) => {
     $('bazarFeedback').textContent = message || 'Não foi possível concluir a operação.';
@@ -836,7 +900,7 @@
   socket.on('updatePlayers',players=>{
     if(!state)return;
     const oldPlayers=new Map(state.players.map(p=>[p.id,p]));
-    state.players=players.map(p=>{const old=oldPlayers.get(p.id)||{};return {...old,id:p.id,name:p.name,title:p.title||null,host:p.isHost,alive:p.isAlive,isReady:p.isReady,isSilenced:Boolean(p.isSilenced),isDisconnected:Boolean(p.isDisconnected)};});
+    state.players=players.map(p=>{const old=oldPlayers.get(p.id)||{};return {...old,id:p.id,name:p.name,title:p.title||null,border:p.border||null,host:p.isHost,alive:p.isAlive,isReady:p.isReady,isSilenced:Boolean(p.isSilenced),isDisconnected:Boolean(p.isDisconnected)};});
     if(state.me){const me=players.find(p=>p.id===playerId);if(me)state.me.isSilenced=Boolean(me.isSilenced);}
     render();
   });

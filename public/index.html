@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20261027-4">
+  <link rel="stylesheet" href="style.css?v=20261027-5">
 </head>
 <body>
   <main id="landing" class="landing">
@@ -31,8 +31,21 @@
         <div id="accountActions" class="hidden">
           <div class="section-kicker auth-kicker">CALDEIRA AUTENTICADA</div>
           <p id="accountWelcome" class="account-welcome"></p>
-          <button id="openHistory" class="manual-open history-open" type="button">📜 Ver Registos de Voo</button>
-          <button id="openBazar" class="button button-secondary bazar-open" type="button">🏪 Bazar a Vapor</button>
+          <button id="togglePlayerProfile" class="profile-toggle" type="button" aria-expanded="false" aria-controls="playerProfilePanel">👤 Painel do Mecânico <span>Ver Perfil &amp; Conquistas</span><b>＋</b></button>
+          <section id="playerProfilePanel" class="player-profile-panel" aria-hidden="true">
+            <div class="profile-card">
+              <div id="profileAvatar" class="profile-avatar">⚙</div>
+              <div class="profile-main"><div class="section-kicker">IDENTIDADE DO MECÂNICO</div><h2 id="profileName">—</h2><div id="profileLevel" class="profile-level">NÍVEL 1</div><div class="profile-xp-track"><span id="profileXpBar"></span></div><small id="profileXpLabel">0 / 1000 XP</small></div>
+              <div class="profile-wallet"><span>MOEDAS DE COBRE</span><strong id="profileCoins">0</strong><b>⚙</b></div>
+            </div>
+            <div class="profile-customization">
+              <label for="equippedTitle">Título equipado<select id="equippedTitle"></select></label>
+              <label for="equippedBorder">Moldura do card<select id="equippedBorder"></select></label>
+            </div>
+            <div class="profile-stats"><div class="section-kicker">CADERNO DE BORDO</div><div class="profile-stat-grid"><div><span>VITÓRIAS</span><strong id="profileWins">0</strong></div><div><span>DERROTAS</span><strong id="profileDefeats">0</strong></div><div><span>TAXA DE VITÓRIA</span><strong id="profileWinRate">0%</strong></div></div><div class="role-stats-heading">CLASSES MAIS JOGADAS</div><div id="profileRoleStats" class="profile-role-stats"></div></div>
+            <div class="profile-shortcuts"><button id="openHistory" class="manual-open history-open" type="button">📜 Ver Registos de Voo</button><button id="openBazar" class="manual-open history-open" type="button">🏪 Bazar a Vapor</button></div>
+            <p id="profileFeedback" class="profile-feedback" aria-live="polite"></p>
+          </section>
           <button id="createRoom" class="button button-primary">⚙ Entrar numa Oficina <span>↗</span></button>
           <div class="divider"><span></span> ou entra numa oficina privada <span></span></div>
           <div class="join-row"><input id="roomInput" maxlength="5" placeholder="CÓDIGO" autocomplete="off"><button id="joinRoom" class="button button-secondary">Entrar</button></div>
@@ -154,6 +167,6 @@
       <p id="historyEmpty" class="history-empty hidden">Nenhum registo encontrado nas caldeiras da cidade.</p>
     </div>
   </section>
-  <script src="/socket.io/socket.io.js"></script><script src="/app.js?v=20261027-4"></script>
+  <script src="/socket.io/socket.io.js"></script><script src="/app.js?v=20261027-5"></script>
 </body>
 </html>

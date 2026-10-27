@@ -907,7 +907,7 @@ class Game {
     }
     return {
       roomCode: this.roomCode, phase: this.phase, day: this.day, secondsLeft: this.deadline ? Math.max(0, Math.ceil((this.deadline - Date.now()) / 1000)) : 0,
-      players: [...this.players.values()].map((p) => ({ id: p.id, name: p.name, title: p.cosmeticTitle || null, alive: p.alive, connected: p.connected, isDisconnected: Boolean(p.isDisconnected), host: p.host, isReady: p.isReady, isSilenced: Boolean(p.isSilenced), isMechanized: player?.role === ROLES.SOUL_COLLECTOR ? Boolean(p.isMechanized) : undefined, role: p.id === forPlayerId ? p.role : (p.alive ? null : p.role), bullets: p.id === forPlayerId ? p.bullets : undefined, voted: this.votes.has(p.id) })),
+      players: [...this.players.values()].map((p) => ({ id: p.id, name: p.name, title: p.cosmeticTitle || null, border: p.cosmeticBorder || null, alive: p.alive, connected: p.connected, isDisconnected: Boolean(p.isDisconnected), host: p.host, isReady: p.isReady, isSilenced: Boolean(p.isSilenced), isMechanized: player?.role === ROLES.SOUL_COLLECTOR ? Boolean(p.isMechanized) : undefined, role: p.id === forPlayerId ? p.role : (p.alive ? null : p.role), bullets: p.id === forPlayerId ? p.bullets : undefined, voted: this.votes.has(p.id) })),
       deadPlayers: this.deadPlayers, log: this.log, me: player ? {
         id: player.id, role: player.role, alive: player.alive, bullets: player.bullets,
         actionSubmitted: Boolean(privateActions), voted: this.votes.has(player.id),

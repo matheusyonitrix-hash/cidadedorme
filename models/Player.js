@@ -56,6 +56,7 @@ const playerSchema = new Schema(
     },
     unlocked_cosmetics: { type: [String], default: [] },
     equipped_cosmetic: { type: String, default: null },
+    equipped_border: { type: String, default: null },
     match_history: {
       type: [{
         role: { type: String, required: true },
