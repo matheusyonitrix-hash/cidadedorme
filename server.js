@@ -1,9 +1,11 @@
 const path = require('node:path');
 const express = require('express');
 const http = require('node:http');
+const { timingSafeEqual } = require('node:crypto');
 const { Server } = require('socket.io');
-const { installSocketHandlers } = require('./socketHandler');
+const { installSocketHandlers, activeRooms } = require('./socketHandler');
 const { connectDB, closeDB } = require('./database');
+const { getFactionName, getFaction, getRoleInfo } = require('./roles');
 
 const app = express();
 const server = http.createServer(app);
@@ -11,6 +13,44 @@ const io = new Server(server, { cors: { origin: false }, maxHttpBufferSize: 1e6 
 installSocketHandlers(io);
 app.use(express.static(path.join(__dirname, 'public')));
 app.get('/health', (_req, res) => res.json({ status: 'ok' }));
+app.get('/admin/status', (req, res) => {
+  res.set('Cache-Control', 'no-store');
+
+  // A chave deve ser configurada no ambiente como ADMIN_STATUS_SECRET; não
+  // guardar credenciais administrativas no código ou no repositório.
+  const expectedSecret = process.env.ADMIN_STATUS_SECRET;
+  const suppliedSecret = typeof req.query.secret === 'string' ? req.query.secret : '';
+  const expected = Buffer.from(expectedSecret || '', 'utf8');
+  const supplied = Buffer.from(suppliedSecret, 'utf8');
+  const authorized = Boolean(expectedSecret) && expected.length === supplied.length &&
+    timingSafeEqual(expected, supplied);
+
+  if (!authorized) {
+    return res.status(403).json({ error: 'Acesso negado.' });
+  }
+
+  const rooms = Object.values(activeRooms).map((room) => ({
+    code: room.code,
+    gameState: room.gameState,
+    hostId: room.hostId,
+    players: (room.players || []).map((player) => {
+      const role = player.role || null;
+      const roleInfo = role ? getRoleInfo(role) : null;
+      const faction = role ? getFaction(role) : null;
+      return {
+        name: player.name,
+        role: roleInfo?.name || role || null,
+        faction: faction ? getFactionName(faction) : null,
+        isAlive: Boolean(player.isAlive),
+        isReady: Boolean(player.isReady),
+        isSilenced: Boolean(player.isSilenced),
+        isMechanized: Boolean(player.isMechanized)
+      };
+    })
+  }));
+
+  return res.json({ totalRooms: rooms.length, rooms });
+});
 // A interface é uma aplicação de página única; caminhos como /** devem
 // continuar a servir o ecrã principal em vez de devolver Cannot GET.
 app.get('*', (_req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
