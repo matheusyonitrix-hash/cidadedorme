@@ -4,6 +4,7 @@
   const $ = (id) => document.getElementById(id);
   const landing = $('landing'), game = $('game'), lobbyPanel = $('lobbyPanel'), gamePanel = $('gamePanel');
   let state = null, playerId = null, roomCode = null, selectedTarget = null, toastTimer = null, revealedRole = null, revealTimer = null, gameOverPayload = null;
+  let accountProfile = null, matchProgress = null;
   const pendingLobbySends = [];
   // Durante a saída, eventos antigos da sala não podem voltar a abrir o lobby.
   let leavingRoom = false, leaveTimeout = null;
@@ -115,6 +116,48 @@
     $('toast').textContent = message; $('toast').classList.remove('hidden'); clearTimeout(toastTimer);
     toastTimer = setTimeout(() => $('toast').classList.add('hidden'), 3500);
   }
+
+  function levelProgress(profile) {
+    const level = Math.max(1, Number(profile?.level) || 1);
+    const totalXp = Math.max(0, Number(profile?.xp) || 0);
+    const currentLevelStart = (level * (level - 1) / 2) * 1000;
+    const xpIntoLevel = Math.max(0, totalXp - currentLevelStart);
+    const xpRequired = level * 1000;
+    return { level, xpIntoLevel, xpRequired, percent: Math.min(100, xpIntoLevel / xpRequired * 100) };
+  }
+
+  function renderAccountProfile(profile) {
+    if (!profile?.username) return;
+    accountProfile = profile;
+    const progress = levelProgress(profile);
+    const coins = Number(profile.currencies?.copper_coins) || 0;
+    $('accountProgress').classList.remove('hidden');
+    $('accountProgressLabel').textContent = `${profile.username} · NÍVEL ${progress.level} · XP ${progress.xpIntoLevel}/${progress.xpRequired} · ${coins} COBRE`;
+    $('accountXpBar').style.width = `${progress.percent}%`;
+    $('accountWelcome').textContent = `Bem-vindo, ${profile.username}. O teu progresso está guardado na caldeira.`;
+    $('accountForm').classList.add('hidden');
+    $('accountActions').classList.remove('hidden');
+  }
+
+  function setAuthBusy(isBusy) {
+    $('loginAccount').disabled = isBusy;
+    $('registerAccount').disabled = isBusy;
+    $('loginAccount').textContent = isBusy ? 'A verificar credenciais…' : 'Acessar Oficina ↗';
+    $('registerAccount').textContent = isBusy ? 'A fundir…' : 'Fundir Nova Conta';
+  }
+
+  function acceptAccount(payload, actionLabel) {
+    const profile = payload?.account || payload;
+    if (!profile?.username) {
+      $('authFeedback').textContent = 'O servidor respondeu sem os dados do perfil. Tenta novamente.';
+      setAuthBusy(false);
+      return;
+    }
+    $('accountPassword').value = '';
+    $('authFeedback').textContent = `${actionLabel}: conta ligada e progresso sincronizado.`;
+    setAuthBusy(false);
+    renderAccountProfile(profile);
+  }
   const classesModal = $('classes-modal');
   const classesOpenButton = $('classes-manual-open');
   let classesCloseTimer = null;
@@ -146,6 +189,7 @@
   function enterRoom(data) {
     if (leavingRoom) return;
     roomCode = data.roomCode; playerId = data.playerId;
+    matchProgress = null;
     $('roomCodeLabel').textContent = roomCode;
     landing.classList.add('hidden'); game.classList.remove('hidden');
     // Mostra já a oficina, sem esperar pelo primeiro gameState do servidor.
@@ -166,7 +210,6 @@
     gameOverPayload = null;
     clearTimeout(revealTimer);
     clearTimeout(leaveTimeout);
-    $('nameInput').value = '';
     $('roomInput').value = '';
     $('chatMessages').innerHTML = '<div class="chat-empty">As ondas estão em silêncio.<br>Envia a primeira mensagem.</div>';
     $('lobby-chat-messages').innerHTML = '<div class="lobby-chat-empty">A oficina está em silêncio.<br>Inicia a conversa com a tripulação.</div>';
@@ -444,6 +487,14 @@
     $('victorySubtext').textContent=result.subtitle;
     const survivors=gameOverPayload?.survivors||state.survivors||[];
     $('survivorList').innerHTML=survivors.length?survivors.map(p=>`<li><span class="survivor-mark">⚙</span><span>${escapeHtml(p.name)}</span><small>${escapeHtml(roleNames[p.role]||p.role||'Sobrevivente')}</small></li>`).join(''):'<li class="no-survivors">Ninguém sobreviveu.</li>';
+    const reward = $('matchProgressReward');
+    if (matchProgress) {
+      reward.textContent = `+${matchProgress.xpGained} XP${matchProgress.coinsGained ? ` · +${matchProgress.coinsGained} moedas de cobre` : ''}${matchProgress.leveledUp ? ` · NÍVEL ${matchProgress.level} ALCANÇADO` : ''}`;
+      reward.classList.remove('hidden');
+    } else if (accountProfile) {
+      reward.textContent = 'A sincronizar o relatório de progressão…';
+      reward.classList.remove('hidden');
+    } else reward.classList.add('hidden');
     const host=state.players?.find(p=>p.id===playerId)?.host;
     $('backToLobby').disabled=!host;
     $('backToLobby').classList.toggle('disabled-button',!host);
@@ -452,13 +503,46 @@
   }
   function escapeHtml(s) { return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
+  $('accountForm').addEventListener('submit', event => {
+    event.preventDefault();
+    const username = $('accountUsername').value.trim();
+    const password = $('accountPassword').value;
+    if (!username || !password) return $('authFeedback').textContent = 'Preenche o usuário e a senha.';
+    $('authFeedback').textContent = 'A verificar a tua identidade na caldeira…';
+    setAuthBusy(true);
+    socket.emit('loginAccount', { username, password });
+  });
+  $('registerAccount').addEventListener('click', () => {
+    const username = $('accountUsername').value.trim();
+    const password = $('accountPassword').value;
+    if (!username || !password) return $('authFeedback').textContent = 'Preenche o usuário e a senha para fundir a conta.';
+    $('authFeedback').textContent = 'A fundir uma nova conta…';
+    setAuthBusy(true);
+    socket.emit('registerAccount', { username, password });
+  });
+  $('logoutAccount').addEventListener('click', () => {
+    socket.emit('logoutAccount');
+    accountProfile = null;
+    matchProgress = null;
+    $('accountProgress').classList.add('hidden');
+    $('accountActions').classList.add('hidden');
+    $('accountForm').classList.remove('hidden');
+    $('accountUsername').value = '';
+    $('accountPassword').value = '';
+    $('authFeedback').textContent = 'Sessão terminada. Inicia sessão ou cria uma conta.';
+    setAuthBusy(false);
+  });
   $('createRoom').onclick=()=>{
-    const name=$('nameInput').value.trim();
-    if(!name)return showToast('Escreve o teu nome primeiro.');
+    const name=accountProfile?.username;
+    if(!name)return showToast('Inicia sessão antes de entrar numa oficina.');
     console.log('Partida rápida solicitada para:', name);
     socket.emit('findMatch', { name });
   };
-  $('joinRoom').onclick=()=>{const name=$('nameInput').value.trim(),code=$('roomInput').value.trim();if(!name||!code)return showToast('Indica o teu nome e o código da sala.');socket.emit('joinRoom',{name,roomCode:code});};
+  $('joinRoom').onclick=()=>{
+    const name=accountProfile?.username,code=$('roomInput').value.trim();
+    if(!name||!code)return showToast('Inicia sessão e indica o código da oficina.');
+    socket.emit('joinRoom',{name,roomCode:code});
+  };
   $('roomInput').addEventListener('input',e=>e.target.value=e.target.value.toUpperCase());
   $('startGame').onclick=()=>socket.emit('startGame');
   $('readyButton').onclick=()=>{const me=state?.players.find(p=>p.id===playerId);if(me)socket.emit('setReady',{isReady:!me.isReady});};
@@ -527,6 +611,18 @@
   });
   socket.on('joinedRoom',enterRoom);
   socket.on('roomJoined',enterRoom);
+  socket.on('registerSuccess', payload => acceptAccount(payload, 'Conta fundida com sucesso'));
+  socket.on('loginSuccess', payload => acceptAccount(payload, 'Sessão iniciada'));
+  socket.on('accountError', ({ message } = {}) => {
+    setAuthBusy(false);
+    $('authFeedback').textContent = message || 'Falha na autenticação.';
+  });
+  socket.on('playerProgressUpdated', progress => {
+    matchProgress = progress;
+    renderAccountProfile(progress);
+    if (state?.phase === 'GAMEOVER') renderGameOver();
+  });
+  socket.on('playerProgressError', ({ message } = {}) => showToast(message || 'Não foi possível guardar o progresso.'));
   socket.on('roomCreated',({roomCode:createdRoomCode,playerId:createdPlayerId}={})=>{
     if (leavingRoom) return;
     if(!createdRoomCode||!createdPlayerId){
@@ -547,6 +643,7 @@
   });
   socket.on('roomReset',({ roomCode: resetRoomCode } = {})=>{
     gameOverPayload=null;revealedRole=null;selectedTarget=null;
+    matchProgress=null;
     clearTimeout(revealTimer);
     if (resetRoomCode) roomCode = resetRoomCode;
     if (state) {
@@ -681,7 +778,7 @@
   }
   function appendLobbyChatMessage(data = {}) {
     if (data.type === 'player') {
-      const localName = state?.players?.find(player => player.id === playerId)?.name || $('nameInput').value.trim();
+      const localName = state?.players?.find(player => player.id === playerId)?.name || accountProfile?.username || '';
       if (data.sender === localName) {
         const pendingIndex = pendingLobbySends.findIndex(pending => pending.message === data.text);
         if (pendingIndex >= 0) {

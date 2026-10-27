@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20261024-14">
+  <link rel="stylesheet" href="style.css?v=20261027-1">
 </head>
 <body>
   <main id="landing" class="landing">
@@ -18,19 +18,31 @@
       <div class="sigil">⚙</div>
       <h1>A Cidade<br><em>Dorme</em></h1>
       <p class="landing-copy">Quando a última caldeira se apaga, alguém<br>move-se entre as sombras.</p>
-      <div class="join-card">
-        <label for="nameInput">O teu nome</label>
-        <input id="nameInput" maxlength="20" placeholder="Como te chamam?" autocomplete="nickname">
-        <button id="createRoom" class="button button-primary">⚙️ Entrar em uma Oficina <span>↗</span></button>
-        <div class="divider"><span></span> ou entra numa sala <span></span></div>
-        <div class="join-row"><input id="roomInput" maxlength="5" placeholder="CÓDIGO" autocomplete="off"><button id="joinRoom" class="button button-secondary">Entrar</button></div>
+      <div class="join-card account-card">
+        <form id="accountForm" autocomplete="on">
+          <div class="section-kicker auth-kicker">IDENTIFICAÇÃO DE TRIPULANTE</div>
+          <label for="accountUsername">Nome de usuário</label>
+          <input id="accountUsername" maxlength="20" placeholder="ex.: Yokki_QA" autocomplete="username" required>
+          <label for="accountPassword">Senha</label>
+          <input id="accountPassword" type="password" minlength="8" maxlength="128" placeholder="Mínimo de 8 caracteres" autocomplete="current-password" required>
+          <div class="auth-actions"><button id="loginAccount" type="submit" class="button button-primary">Acessar Oficina <span>↗</span></button><button id="registerAccount" type="button" class="button button-secondary">Fundir Nova Conta</button></div>
+          <p id="authFeedback" class="auth-feedback" aria-live="polite">Inicia sessão ou cria uma conta para guardar o teu progresso.</p>
+        </form>
+        <div id="accountActions" class="hidden">
+          <div class="section-kicker auth-kicker">CALDEIRA AUTENTICADA</div>
+          <p id="accountWelcome" class="account-welcome"></p>
+          <button id="createRoom" class="button button-primary">⚙ Entrar numa Oficina <span>↗</span></button>
+          <div class="divider"><span></span> ou entra numa oficina privada <span></span></div>
+          <div class="join-row"><input id="roomInput" maxlength="5" placeholder="CÓDIGO" autocomplete="off"><button id="joinRoom" class="button button-secondary">Entrar</button></div>
+          <button id="logoutAccount" class="text-button account-logout" type="button">Terminar sessão</button>
+        </div>
       </div>
       <p class="landing-foot">DISTRITO DA FULIGEM <span>·</span> ANO 1897</p>
     </div>
   </main>
 
   <main id="game" class="game hidden">
-    <header class="topbar"><button id="btn-back-to-menu" type="button">⬅️ Voltar para o Menu</button><a class="brand" href="#"><span>⚙</span> A CIDADE <em>DORME</em></a><div class="room-badge"><div class="room-code-line">OFICINA <strong id="roomCodeLabel">—</strong><button id="copyCode" title="Copiar código">⧉</button></div><button id="classes-manual-open" class="manual-open" type="button" aria-haspopup="dialog" aria-controls="classes-modal">📜 Manual de Classes</button></div><div class="topbar-status"><button id="audioToggle" class="audio-toggle" type="button" aria-pressed="false" aria-label="Ativar som dos cliques" title="Ativar som dos cliques">🔇 CLIQUES MUDOS</button><span class="connection-dot"></span><span id="connectionLabel">LIGADO</span></div></header>
+    <header class="topbar"><button id="btn-back-to-menu" type="button">⬅️ Voltar para o Menu</button><a class="brand" href="#"><span>⚙</span> A CIDADE <em>DORME</em></a><div class="room-badge"><div class="room-code-line">OFICINA <strong id="roomCodeLabel">—</strong><button id="copyCode" title="Copiar código">⧉</button></div><button id="classes-manual-open" class="manual-open" type="button" aria-haspopup="dialog" aria-controls="classes-modal">📜 Manual de Classes</button><div id="accountProgress" class="account-progress hidden"><div id="accountProgressLabel"></div><div class="account-xp-track"><span id="accountXpBar"></span></div></div></div><div class="topbar-status"><button id="audioToggle" class="audio-toggle" type="button" aria-pressed="false" aria-label="Ativar som dos cliques" title="Ativar som dos cliques">🔇 CLIQUES MUDOS</button><span class="connection-dot"></span><span id="connectionLabel">LIGADO</span></div></header>
     <section id="lobbyPanel" class="lobby-panel hidden"><div class="lobby-copy"><div class="eyebrow">A OFICINA ESTÁ ABERTA</div><h2>Reúne a tua<br><em>tripulação.</em></h2><p>São precisos entre 2 e 16 jogadores para a sirene tocar.</p><div id="lobbyCount" class="lobby-count">01 <span>/ 02 MÍNIMO</span></div><div class="lobby-buttons"><button id="readyButton" class="button button-secondary">Marcar como pronto</button><button id="startGame" class="button button-primary">Dar início à noite <span>↗</span></button></div><p id="hostHint" class="subtle"></p></div><div class="lobby-right-column"><div class="lobby-roster"><div class="section-kicker">NA OFICINA <span id="rosterCount">00</span></div><div id="lobbyPlayers" class="roster-list"></div></div><section class="lobby-chat-container" aria-label="Chat da oficina"><div class="lobby-chat-heading"><div><div class="section-kicker">FREQUÊNCIA LOCAL</div><h3>Conversa da Oficina</h3></div><span>PRÉ-JOGO</span></div><div id="lobby-chat-messages" class="lobby-chat-messages" aria-live="polite"><div class="lobby-chat-empty">A oficina está em silêncio.<br>Inicia a conversa com a tripulação.</div></div><form class="lobby-chat-controls" id="lobby-chat-form"><input type="text" id="lobby-chat-input" maxlength="500" placeholder="Converse com a oficina..." autocomplete="off"><button type="submit" id="btn-send-lobby-message">Enviar</button></form></section></div></section>
     <section id="gamePanel" class="game-layout hidden">
       <aside class="left-column"><div class="phase-card"><div id="phaseIcon" class="phase-icon">☾</div><div class="section-kicker" id="dayLabel">NOITE 01</div><h2 id="phaseTitle">A cidade<br><em>dorme.</em></h2><div class="timer-track"><div id="timerBar"></div></div><div class="timer-label"><span id="phaseHint">Ouve o silêncio.</span><strong id="timerText">45s</strong></div></div>
@@ -46,6 +58,7 @@
         <div class="eyebrow">RELATÓRIO FINAL · DISTRITO DA FULIGEM</div>
         <h1 id="victoryText">—</h1>
         <p id="victorySubtext" class="victory-subtext">A partida terminou.</p>
+        <p id="matchProgressReward" class="match-progress-reward hidden" aria-live="polite"></p>
         <div class="survivor-heading section-kicker">SOBREVIVERAM À NOITE</div>
         <ul id="survivorList" class="survivor-list"></ul>
         <p id="returnHint" class="return-hint"></p>

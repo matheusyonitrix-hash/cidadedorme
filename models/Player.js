@@ -41,9 +41,13 @@ const playerSchema = new Schema(
       unique: true,
       index: true,
       trim: true,
+      lowercase: true,
       minlength: 2,
-      maxlength: 32
+      maxlength: 20
     },
+    // Apenas o hash scrypt é persistido. O campo fica fora das consultas
+    // normais e só é selecionado explicitamente durante o login.
+    passwordHash: { type: String, required: true, select: false },
     level: { type: Number, default: 1, min: 1 },
     xp: { type: Number, default: 0, min: 0 },
     currencies: {

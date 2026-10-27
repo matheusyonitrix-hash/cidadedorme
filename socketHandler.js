@@ -1,6 +1,47 @@
-const { randomInt } = require('node:crypto');
+const { randomInt, randomBytes, scrypt, timingSafeEqual } = require('node:crypto');
+const { promisify } = require('node:util');
 const { Game } = require('./gameEngine');
-const { MIN_PLAYERS, getFaction, getRoleInfo } = require('./roles');
+const { ROLES, MIN_PLAYERS, getFaction, getRoleInfo } = require('./roles');
+const Player = require('./models/Player');
+
+const scryptAsync = promisify(scrypt);
+const USERNAME_PATTERN = /^[\p{L}\p{N}_-]{2,20}$/u;
+
+function normalizeUsername(value) {
+  return String(value || '').trim().toLocaleLowerCase('pt');
+}
+
+async function hashPassword(password) {
+  const salt = randomBytes(16);
+  const derivedKey = await scryptAsync(password, salt, 64);
+  return `scrypt$${salt.toString('hex')}$${Buffer.from(derivedKey).toString('hex')}`;
+}
+
+async function verifyPassword(password, storedHash) {
+  const [algorithm, saltHex, keyHex] = String(storedHash || '').split('$');
+  if (algorithm !== 'scrypt' || !saltHex || !keyHex) return false;
+  const expected = Buffer.from(keyHex, 'hex');
+  const actual = Buffer.from(await scryptAsync(password, Buffer.from(saltHex, 'hex'), expected.length));
+  return actual.length === expected.length && timingSafeEqual(actual, expected);
+}
+
+function accountPayload(player) {
+  return {
+    id: String(player._id),
+    username: player.username,
+    level: player.level,
+    xp: player.xp,
+    currencies: {
+      copper_coins: player.currencies?.copper_coins || 0,
+      steam_gears: player.currencies?.steam_gears || 0
+    },
+    stats: {
+      games_played: player.stats?.games_played || 0,
+      victories: player.stats?.victories || 0,
+      defeats: player.stats?.defeats || 0
+    }
+  };
+}
 
 // Registo de salas conforme o contrato do lobby. O motor Game continua a ser
 // a fonte de verdade das regras e é sincronizado para este objeto em memória.
@@ -63,6 +104,12 @@ function installSocketHandlers(io) {
     }
     io.to(game.roomCode).emit('updateVotes', voteCounts);
     if (game.phase === 'GAMEOVER' && previousPhase !== 'GAMEOVER' && game.gameOverResult) {
+      if (!game.progressAwardsStarted) {
+        game.progressAwardsStarted = true;
+        awardMatchProgress(game, game.gameOverResult).catch((err) => {
+          console.error(`❌ [PROGRESS] Falha ao processar recompensas da oficina ${game.roomCode}: ${err.message}`);
+        });
+      }
       io.to(game.roomCode).emit('gameOver', game.gameOverResult);
     }
     io.to(game.roomCode).emit('updatePlayers', roomRoster(game));
@@ -117,13 +164,62 @@ function installSocketHandlers(io) {
     emitLobbyMessage(game, { sender: 'Sistema', text, type: 'system' });
   }
 
+  function isMatchWinner(player, winnerFaction) {
+    if (winnerFaction === 'steam' || winnerFaction === 'syndicate') {
+      return getFaction(player.role) === winnerFaction;
+    }
+    const individualWinners = {
+      automaton: ROLES.AUTOMATON,
+      scrap: ROLES.SCRAP_COLLECTOR,
+      scientist: ROLES.MAD_SCIENTIST,
+      'Colecionador de Almas Mecânicas': ROLES.SOUL_COLLECTOR
+    };
+    return individualWinners[winnerFaction] === player.role;
+  }
+
+  async function awardMatchProgress(game, result) {
+    const pendingAwards = [...game.players.values()].map(async (player) => {
+      if (!player.accountUsername || !player.role) return;
+      const isVictory = isMatchWinner(player, result.winnerFaction);
+      const xpGained = isVictory ? 250 : 50;
+      const coinsGained = isVictory ? 50 : 0;
+
+      try {
+        const profile = await Player.saveMatchResult(
+          player.accountUsername, player.role, isVictory, xpGained, coinsGained
+        );
+        io.to(player.id).emit('playerProgressUpdated', {
+          ...accountPayload(profile),
+          xpGained,
+          coinsGained,
+          leveledUp: profile.level > (player.accountLevel || 1)
+        });
+        player.accountLevel = profile.level;
+      } catch (err) {
+        console.error(`❌ [PROGRESS] Falha ao guardar o resultado de ${player.accountUsername}: ${err.message}`);
+        io.to(player.id).emit('playerProgressError', {
+          message: 'A partida terminou, mas não foi possível guardar o teu progresso. Tenta novamente mais tarde.'
+        });
+      }
+    });
+    await Promise.all(pendingAwards);
+  }
+
   function error(socket, err) {
     socket.emit('gameError', { message: err.message || 'Ocorreu um erro inesperado.' });
   }
 
   function registerPlayer(socket, game, name, { confirmationEvent = 'joinedRoom' } = {}) {
     if (playerRooms.has(socket.id)) throw new Error('Já estás ligado a uma oficina.');
-    const player = game.addPlayer({ id: socket.id, name });
+    if (Player.db.readyState === 1 && !socket.data.account) {
+      throw new Error('Inicia sessão na tua conta antes de entrar numa oficina.');
+    }
+    const finalName = socket.data.account?.username || name;
+    const player = game.addPlayer({ id: socket.id, name: finalName });
+    if (socket.data.account) {
+      player.accountUsername = socket.data.account.username;
+      player.accountLevel = socket.data.account.level || 1;
+    }
     playerRooms.set(socket.id, game.roomCode);
     socket.join(game.roomCode);
     socket.emit(confirmationEvent, { roomCode: game.roomCode, playerId: player.id });
@@ -179,12 +275,76 @@ function installSocketHandlers(io) {
   }
 
   io.on('connection', (socket) => {
+    socket.on('registerAccount', async ({ username, password } = {}) => {
+      try {
+        if (Player.db.readyState !== 1) {
+          throw new Error('A criação de contas está indisponível: MongoDB não está conectado.');
+        }
+        const normalizedUsername = normalizeUsername(username);
+        if (!USERNAME_PATTERN.test(normalizedUsername)) {
+          throw new Error('O usuário deve ter de 2 a 20 letras, números, sublinhados ou hífens.');
+        }
+        if (typeof password !== 'string' || password.length < 8 || password.length > 128) {
+          throw new Error('A senha deve ter entre 8 e 128 caracteres.');
+        }
+
+        await Player.init();
+        if (await Player.exists({ username: normalizedUsername })) {
+          throw new Error('Esse usuário já está registado.');
+        }
+        const player = await Player.create({
+          username: normalizedUsername,
+          passwordHash: await hashPassword(password),
+          level: 1,
+          xp: 0
+        });
+        const account = accountPayload(player);
+        socket.data.account = { id: account.id, username: account.username, level: account.level };
+        socket.emit('registerSuccess', { account });
+      } catch (err) {
+        const message = err.code === 11000 ? 'Esse usuário já está registado.' : err.message;
+        socket.emit('accountError', { action: 'register', message: message || 'Não foi possível criar a conta.' });
+      }
+    });
+
+    socket.on('loginAccount', async ({ username, password } = {}) => {
+      try {
+        if (Player.db.readyState !== 1) {
+          throw new Error('O acesso está indisponível: MongoDB não está conectado.');
+        }
+        const normalizedUsername = normalizeUsername(username);
+        if (!USERNAME_PATTERN.test(normalizedUsername) || typeof password !== 'string' || password.length > 128) {
+          throw new Error('Usuário ou senha incorretos.');
+        }
+
+        const player = await Player.findOne({ username: normalizedUsername }).select('+passwordHash');
+        if (!player || !(await verifyPassword(password, player.passwordHash))) {
+          throw new Error('Usuário ou senha incorretos.');
+        }
+        const account = accountPayload(player);
+        socket.data.account = { id: account.id, username: account.username, level: account.level };
+        socket.emit('loginSuccess', { account });
+      } catch (err) {
+        socket.emit('accountError', { action: 'login', message: err.message || 'Não foi possível iniciar sessão.' });
+      }
+    });
+
+    socket.on('logoutAccount', () => {
+      if (playerRooms.has(socket.id)) {
+        socket.emit('accountError', { action: 'logout', message: 'Sai da oficina antes de terminar a sessão.' });
+        return;
+      }
+      socket.data.account = null;
+      socket.emit('logoutSuccess');
+    });
+
     function createRoomForPlayer(name, isDebug = false) {
       try {
         if (playerRooms.has(socket.id)) throw new Error('Já estás ligado a uma oficina.');
         const code = makeRoomCode();
         const debugMode = isDebug === true || String(name || '').trim().toLocaleLowerCase('pt') === 'yokki_qa';
         const game = new Game(code, emitRoom, { isDebug: debugMode });
+        game.progressAwardsStarted = false;
         game.onSystemMessage = (text) => systemMessage(game, text);
         game.onPrivate = (playerId, payload) => {
           io.to(playerId).emit('privateEvent', payload);
@@ -445,6 +605,7 @@ function installSocketHandlers(io) {
         activeRooms[game.roomCode].chatHistory = [];
         activeRooms[game.roomCode].lobbyChatHistory = [];
         game.resetToLobby({ emit: false });
+        game.progressAwardsStarted = false;
         io.to(game.roomCode).emit('roomReset', { roomCode: game.roomCode });
         lobbySystemMessage(game, 'A oficina foi preparada para uma nova partida.');
         systemMessage(game, 'A oficina foi preparada para uma nova partida.');

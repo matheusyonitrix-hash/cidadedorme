@@ -83,12 +83,12 @@ roomCleanupTimer.unref();
 
 const PORT = process.env.PORT || 3000;
 async function startServer() {
-  // O Render não fornece MongoDB local. Sem MONGODB_URI, o servidor do jogo
-  // pode arrancar normalmente; a persistência de perfis fica desativada.
+  // Usa a URI de produção quando configurada e mantém o MongoDB local como
+  // conveniência no desenvolvimento. Sem Mongo em produção, o jogo continua.
   if (process.env.MONGODB_URI || process.env.NODE_ENV !== 'production') {
     await connectDB();
   } else {
-    console.warn('⚠️ [DATABASE] MONGODB_URI não definida; persistência de perfis desativada neste deploy.');
+    console.warn('⚠️ [DATABASE] MONGODB_URI não definida; autenticação e progressão persistente desativadas.');
   }
 
   server.listen(PORT, () => {
