@@ -114,16 +114,61 @@ class Game {
     const cleanName = String(name || '').trim().replace(/\s+/g, ' ').slice(0, 20);
     if (cleanName.length < 2) throw new Error('O nome precisa de ter pelo menos 2 caracteres.');
     if ([...this.players.values()].some((p) => p.name.toLowerCase() === cleanName.toLowerCase())) throw new Error('Esse nome já está a ser usado na sala.');
-    const player = { id, name: cleanName, role: null, alive: true, connected: true, host: this.players.size === 0, bullets: 2, isReady: false, isSilenced: false, isOiled: false, hasTitaniumPlate: false, mechanizedBy: null, isMechanized: false, subornedBy: null, bronzeCharges: 0, isAlerted: false };
+    const player = { id, name: cleanName, role: null, alive: true, connected: true, isDisconnected: false, host: this.players.size === 0, bullets: 2, isReady: false, isSilenced: false, isOiled: false, hasTitaniumPlate: false, mechanizedBy: null, isMechanized: false, subornedBy: null, bronzeCharges: 0, isAlerted: false };
     this.players.set(id, player);
     this.addLog(`${cleanName} entrou na oficina.`, 'system');
     this.emit();
     return player;
   }
 
-  reconnectPlayer(id) {
-    const player = this.players.get(id);
-    if (player) { player.connected = true; this.emit(); }
+  reconnectPlayer(previousId, nextId = previousId) {
+    const player = this.players.get(previousId);
+    if (!player) return null;
+
+    const replaceInSet = (set) => {
+      if (set?.delete(previousId)) set.add(nextId);
+    };
+    const replaceInMap = (map, replaceValues = false) => {
+      if (!map) return;
+      if (map.has(previousId)) {
+        const value = map.get(previousId);
+        map.delete(previousId);
+        map.set(nextId, value);
+      }
+      if (replaceValues) for (const [key, value] of map) if (value === previousId) map.set(key, nextId);
+    };
+
+    const roster = [...this.players.entries()];
+    this.players.clear();
+    player.id = nextId;
+    player.connected = true;
+    player.isDisconnected = false;
+    for (const [id, candidate] of roster) this.players.set(id === previousId ? nextId : id, candidate);
+    replaceInMap(this.actions);
+    for (const action of this.actions.values()) {
+      if (action.targetId === previousId) action.targetId = nextId;
+      if (action.redirectTargetId === previousId) action.redirectTargetId = nextId;
+      if (action.secondTargetId === previousId) action.secondTargetId = nextId;
+      if (Array.isArray(action.targetIds)) action.targetIds = action.targetIds.map((id) => id === previousId ? nextId : id);
+    }
+    replaceInMap(this.votes, true);
+    replaceInMap(this.syndicateVotes, true);
+    replaceInMap(this.lastInventorShot);
+    replaceInMap(this.inspectionSwaps, true);
+    [this.oiledTargets, this.stunnedNextNight, this.stunnedThisNight, this.silencedNextDay, this.silencedToday].forEach(replaceInSet);
+    if (this.bribedPlayerId === previousId) this.bribedPlayerId = nextId;
+    if (this.bankerId === previousId) this.bankerId = nextId;
+    for (const candidate of this.players.values()) {
+      if (candidate.subornedBy === previousId) candidate.subornedBy = nextId;
+      if (candidate.mechanizedBy === previousId) candidate.mechanizedBy = nextId;
+    }
+    for (const ballot of this.voteHistory) {
+      if (ballot.voterId === previousId) ballot.voterId = nextId;
+      if (ballot.targetId === previousId) ballot.targetId = nextId;
+    }
+    for (const dead of this.deadPlayers) if (dead.id === previousId) dead.id = nextId;
+    if (this.lastElimination?.player?.id === previousId) this.lastElimination.player.id = nextId;
+    this.emit();
     return player;
   }
 
@@ -862,7 +907,7 @@ class Game {
     }
     return {
       roomCode: this.roomCode, phase: this.phase, day: this.day, secondsLeft: this.deadline ? Math.max(0, Math.ceil((this.deadline - Date.now()) / 1000)) : 0,
-      players: [...this.players.values()].map((p) => ({ id: p.id, name: p.name, title: p.cosmeticTitle || null, alive: p.alive, connected: p.connected, host: p.host, isReady: p.isReady, isSilenced: Boolean(p.isSilenced), isMechanized: player?.role === ROLES.SOUL_COLLECTOR ? Boolean(p.isMechanized) : undefined, role: p.id === forPlayerId ? p.role : (p.alive ? null : p.role), bullets: p.id === forPlayerId ? p.bullets : undefined, voted: this.votes.has(p.id) })),
+      players: [...this.players.values()].map((p) => ({ id: p.id, name: p.name, title: p.cosmeticTitle || null, alive: p.alive, connected: p.connected, isDisconnected: Boolean(p.isDisconnected), host: p.host, isReady: p.isReady, isSilenced: Boolean(p.isSilenced), isMechanized: player?.role === ROLES.SOUL_COLLECTOR ? Boolean(p.isMechanized) : undefined, role: p.id === forPlayerId ? p.role : (p.alive ? null : p.role), bullets: p.id === forPlayerId ? p.bullets : undefined, voted: this.votes.has(p.id) })),
       deadPlayers: this.deadPlayers, log: this.log, me: player ? {
         id: player.id, role: player.role, alive: player.alive, bullets: player.bullets,
         actionSubmitted: Boolean(privateActions), voted: this.votes.has(player.id),

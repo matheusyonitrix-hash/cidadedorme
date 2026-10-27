@@ -261,6 +261,13 @@
   function enterRoom(data) {
     if (leavingRoom) return;
     roomCode = data.roomCode; playerId = data.playerId;
+    if (data.reconnectToken) {
+      sessionStorage.setItem('cidadeDormeReconnect', JSON.stringify({
+        username: data.username || accountProfile?.username || state?.players?.find(player => player.id === playerId)?.name || '',
+        roomCode,
+        reconnectToken: data.reconnectToken
+      }));
+    }
     matchProgress = null;
     $('roomCodeLabel').textContent = roomCode;
     landing.classList.add('hidden'); game.classList.remove('hidden');
@@ -277,6 +284,7 @@
     state = null;
     playerId = null;
     roomCode = null;
+    sessionStorage.removeItem('cidadeDormeReconnect');
     selectedTarget = null;
     revealedRole = null;
     gameOverPayload = null;
@@ -341,7 +349,7 @@
       $('rosterCount').textContent = String(state.players.length).padStart(2,'0');
       const lobbySlots = Array.from({ length: 16 }, (_, index) => state.players[index] || null);
       $('lobbyPlayers').innerHTML = lobbySlots.map((p, index) => p
-        ? `<div class="roster-row"><div class="avatar">${escapeHtml(p.name.slice(0,1).toUpperCase())}</div><span>${escapeHtml(p.name)}</span>${p.title?`<small class="player-cosmetic-title">${escapeHtml(p.title)}</small>`:''}${p.host?'<span class="host-mark">ANFITRIÃO</span>':''}${p.isReady?'<span class="ready-mark">PRONTO</span>':''}</div>`
+        ? `<div class="roster-row ${p.isDisconnected?'roster-disconnected':''}"><div class="avatar">${escapeHtml(p.name.slice(0,1).toUpperCase())}</div><span>${escapeHtml(p.name)}</span>${p.title?`<small class="player-cosmetic-title">${escapeHtml(p.title)}</small>`:''}${p.isDisconnected?'<small class="disconnect-mark">A RECONECTAR</small>':''}${p.host?'<span class="host-mark">ANFITRIÃO</span>':''}${p.isReady?'<span class="ready-mark">PRONTO</span>':''}</div>`
         : `<div class="roster-row empty"><div class="avatar">${String(index + 1).padStart(2,'0')}</div><span>[Vago]</span></div>`).join('');
       const me = state.players.find(p=>p.id===playerId);
       $('readyButton').textContent = me?.isReady ? 'Cancelar pronto' : 'Marcar como pronto';
@@ -388,7 +396,7 @@
       const bribedClass = self && state.me?.bribeVoteControlled ? 'bribed-vote' : '';
       const bribeBadge = self && state.me?.bribeVoteLocked ? '<span class="bribe-badge" title="O teu voto foi confiscado">🪙 VOTO HERDADO</span>' : '';
       const directSyndicateTarget = canVoteSyndicateAttack || (state.phase === 'NIGHT' && state.me?.role === 'SABOTEUR' && canTarget);
-      return `<div class="player-row ${p.alive?'':'dead'} ${selected?'selected':''} ${state.phase==='VOTING'?'voting-card':''} ${bribedClass} ${directSyndicateTarget?'direct-target':''}" ${directSyndicateTarget?`data-player-target="${escapeHtml(p.id)}"`:''}>${badge}<div class="player-avatar">${p.alive?'⚙':'†'}</div><span class="player-name">${escapeHtml(p.name)}${self?' (tu)':''}${p.title?` <small class="player-cosmetic-title">${escapeHtml(p.title)}</small>`:''}</span>${bribeBadge}${role?`<span class="player-role">${escapeHtml(role)}</span>`:`<span class="player-state ${p.alive?'alive':'dead'}">${p.alive?'VIVO':'[DESTRUÍDO]'}</span>`}${directSyndicateTarget?'<span class="direct-target-hint">ALVO · CLICAR</span>':''}${controls}</div>`;
+      return `<div class="player-row ${p.alive?'':'dead'} ${p.isDisconnected?'player-disconnected':''} ${selected?'selected':''} ${state.phase==='VOTING'?'voting-card':''} ${bribedClass} ${directSyndicateTarget?'direct-target':''}" ${directSyndicateTarget?`data-player-target="${escapeHtml(p.id)}"`:''}>${badge}<div class="player-avatar">${p.alive?'⚙':'†'}</div><span class="player-name">${escapeHtml(p.name)}${self?' (tu)':''}${p.title?` <small class="player-cosmetic-title">${escapeHtml(p.title)}</small>`:''}</span>${bribeBadge}${role?`<span class="player-role">${escapeHtml(role)}</span>`:`<span class="player-state ${p.alive?'alive':'dead'}">${p.alive?(p.isDisconnected?'[A RECONECTAR]':'VIVO'):'[DESTRUÍDO]'}</span>`}${directSyndicateTarget?'<span class="direct-target-hint">ALVO · CLICAR</span>':''}${controls}</div>`;
     }).join('');
   }
   function quickNightAction(role) {
@@ -703,6 +711,27 @@
   });
   socket.on('joinedRoom',enterRoom);
   socket.on('roomJoined',enterRoom);
+  socket.on('reconnectionSuccess', data => {
+    enterRoom(data);
+    playerId = data.playerId;
+    roomCode = data.roomCode;
+    state = data.state || null;
+    $('connectionLabel').textContent = 'LIGADO';
+    const gameChat = $('chatMessages');
+    gameChat.replaceChildren();
+    (data.chatHistory || []).forEach(entry => addChat(entry.sender, entry.text, Boolean(entry.private), entry.type || 'player'));
+    if (!data.chatHistory?.length) gameChat.innerHTML = '<div class="chat-empty">As ondas estão em silêncio.<br>Envia a primeira mensagem.</div>';
+    const lobbyChat = $('lobby-chat-messages');
+    lobbyChat.replaceChildren();
+    (data.lobbyChatHistory || []).forEach(appendLobbyChatMessage);
+    if (!data.lobbyChatHistory?.length) lobbyChat.innerHTML = '<div class="lobby-chat-empty">A oficina está em silêncio.<br>Inicia a conversa com a tripulação.</div>';
+    if (state) render();
+    showToast('Ligação restaurada. Voltaste à mesma oficina.');
+  });
+  socket.on('reconnectionError', ({ message } = {}) => {
+    sessionStorage.removeItem('cidadeDormeReconnect');
+    showToast(message || 'A sessão já não pode ser recuperada.');
+  });
   socket.on('registerSuccess', payload => acceptAccount(payload, 'Conta fundida com sucesso'));
   socket.on('loginSuccess', payload => acceptAccount(payload, 'Sessão iniciada'));
   socket.on('purchaseSuccess', ({ account, cosmeticId } = {}) => {
@@ -807,7 +836,7 @@
   socket.on('updatePlayers',players=>{
     if(!state)return;
     const oldPlayers=new Map(state.players.map(p=>[p.id,p]));
-    state.players=players.map(p=>{const old=oldPlayers.get(p.id)||{};return {...old,id:p.id,name:p.name,title:p.title||null,host:p.isHost,alive:p.isAlive,isReady:p.isReady,isSilenced:Boolean(p.isSilenced)};});
+    state.players=players.map(p=>{const old=oldPlayers.get(p.id)||{};return {...old,id:p.id,name:p.name,title:p.title||null,host:p.isHost,alive:p.isAlive,isReady:p.isReady,isSilenced:Boolean(p.isSilenced),isDisconnected:Boolean(p.isDisconnected)};});
     if(state.me){const me=players.find(p=>p.id===playerId);if(me)state.me.isSilenced=Boolean(me.isSilenced);}
     render();
   });
@@ -870,8 +899,24 @@
   socket.on('roleAssigned',data=>{if(state){state.me.role=data.role;state.roleInfo=data.info;render();}});
   socket.on('yourRole',revealRole);
   $('closeRoleReveal').onclick=()=>{$('roleRevealModal').classList.add('hidden');document.body.classList.remove('role-reveal-open');};
-  socket.on('connect',()=>{$('connectionLabel').textContent='LIGADO';});
-  socket.on('disconnect',()=>{$('connectionLabel').textContent='DESLIGADO';});
+  socket.on('connect',()=>{
+    $('connectionLabel').textContent='LIGADO';
+    let saved;
+    try { saved = JSON.parse(sessionStorage.getItem('cidadeDormeReconnect') || 'null'); } catch { saved = null; }
+    if (saved?.username && saved?.roomCode && saved?.reconnectToken) {
+      socket.emit('reconnectPlayer', saved);
+    }
+  });
+  socket.on('disconnect',()=>{
+    $('connectionLabel').textContent='DESLIGADO';
+    if (!roomCode) return;
+    let saved;
+    try { saved = JSON.parse(sessionStorage.getItem('cidadeDormeReconnect') || '{}'); } catch { saved = {}; }
+    const username = accountProfile?.username || state?.players?.find(player => player.id === playerId)?.name || saved.username;
+    if (username && roomCode && saved.reconnectToken) {
+      sessionStorage.setItem('cidadeDormeReconnect', JSON.stringify({ username, roomCode, reconnectToken: saved.reconnectToken }));
+    }
+  });
   socket.on('connect_error',()=>{
     $('connectionLabel').textContent='SEM LIGAÇÃO';
     showToast('Não foi possível ligar ao servidor. Atualiza a página e tenta novamente.');

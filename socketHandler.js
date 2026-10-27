@@ -67,11 +67,13 @@ function makeRoomCode() {
 function installSocketHandlers(io) {
   const games = new Map();
   const playerRooms = new Map();
+  const disconnectTimers = new Map();
 
   function roomRoster(game) {
     return [...game.players.values()].map((p) => ({
       id: p.id, name: p.name, isReady: Boolean(p.isReady), isAlive: Boolean(p.alive),
-      isHost: Boolean(p.host), isSilenced: Boolean(p.isSilenced), title: p.cosmeticTitle || null
+      isHost: Boolean(p.host), isSilenced: Boolean(p.isSilenced),
+      isDisconnected: Boolean(p.isDisconnected), title: p.cosmeticTitle || null
     }));
   }
 
@@ -82,7 +84,7 @@ function installSocketHandlers(io) {
     room.lastActivityAt = Date.now();
     room.hostId = [...game.players.values()].find((p) => p.host)?.id || '';
     room.players = [...game.players.values()].map((p) => ({
-      id: p.id, name: p.name, connected: Boolean(p.connected), isReady: Boolean(p.isReady), isAlive: Boolean(p.alive),
+      id: p.id, name: p.name, connected: Boolean(p.connected), isDisconnected: Boolean(p.isDisconnected), isReady: Boolean(p.isReady), isAlive: Boolean(p.alive),
       role: p.role || '', isHost: Boolean(p.host), subornedBy: p.subornedBy || null,
       isSilenced: Boolean(p.isSilenced), isMechanized: Boolean(p.isMechanized),
       bronzeCharges: p.bronzeCharges, isAlerted: Boolean(p.isAlerted)
@@ -225,6 +227,7 @@ function installSocketHandlers(io) {
     }
     const finalName = socket.data.account?.username || name;
     const player = game.addPlayer({ id: socket.id, name: finalName });
+    player.reconnectToken = randomBytes(32).toString('hex');
     if (socket.data.account) {
       player.accountUsername = socket.data.account.username;
       player.accountLevel = socket.data.account.level || 1;
@@ -232,7 +235,11 @@ function installSocketHandlers(io) {
     }
     playerRooms.set(socket.id, game.roomCode);
     socket.join(game.roomCode);
-    socket.emit(confirmationEvent, { roomCode: game.roomCode, playerId: player.id });
+    socket.emit(confirmationEvent, {
+      roomCode: game.roomCode, playerId: player.id,
+      username: player.accountUsername || player.name,
+      reconnectToken: player.reconnectToken
+    });
     sendChatHistory(socket, game);
     socket.emit('lobbyChatHistory', activeRooms[game.roomCode].lobbyChatHistory || []);
     if (game.phase === 'LOBBY') {
@@ -248,6 +255,9 @@ function installSocketHandlers(io) {
   // sincronizada para que o cliente só então regresse ao menu.
   function removeSocketFromRoom(socket, { confirm = false } = {}) {
     const roomCode = playerRooms.get(socket.id);
+    const disconnectTimer = disconnectTimers.get(socket.id);
+    if (disconnectTimer) clearTimeout(disconnectTimer);
+    disconnectTimers.delete(socket.id);
     const game = roomCode ? games.get(roomCode) : null;
     if (!game) {
       playerRooms.delete(socket.id);
@@ -285,6 +295,54 @@ function installSocketHandlers(io) {
   }
 
   io.on('connection', (socket) => {
+    socket.on('reconnectPlayer', ({ username, roomCode, reconnectToken } = {}) => {
+      try {
+        const code = String(roomCode || '').trim().toUpperCase();
+        const cleanUsername = normalizeUsername(username);
+        const game = games.get(code);
+        if (!game) throw new Error('A oficina já não está disponível para reconexão.');
+        if (playerRooms.has(socket.id)) throw new Error('Este socket já está ligado a uma oficina.');
+        const player = [...game.players.values()].find((candidate) =>
+          normalizeUsername(candidate.accountUsername || candidate.name) === cleanUsername && candidate.isDisconnected === true
+        );
+        if (!player) throw new Error('Não encontrámos uma sessão desligada para este utilizador.');
+        const expected = Buffer.from(player.reconnectToken || '', 'hex');
+        const supplied = Buffer.from(String(reconnectToken || ''), 'hex');
+        if (!expected.length || expected.length !== supplied.length || !timingSafeEqual(expected, supplied)) {
+          throw new Error('A chave de reconexão não é válida.');
+        }
+
+        const previousId = player.id;
+        // Cada uso invalida a chave anterior para que uma credencial antiga
+        // não possa abrir uma sessão futura.
+        player.reconnectToken = randomBytes(32).toString('hex');
+        const pendingKick = disconnectTimers.get(previousId);
+        if (pendingKick) clearTimeout(pendingKick);
+        disconnectTimers.delete(previousId);
+        playerRooms.delete(previousId);
+        game.reconnectPlayer(previousId, socket.id);
+        playerRooms.set(socket.id, code);
+        socket.join(code);
+        syncActiveRoom(game);
+        socket.emit('reconnectionSuccess', {
+          roomCode: code,
+          playerId: socket.id,
+          username: player.accountUsername || player.name,
+          role: player.role,
+          reconnectToken: player.reconnectToken,
+          state: game.publicState(socket.id),
+          chatHistory: (activeRooms[code].chatHistory || []).filter((entry) =>
+            !entry.private || getFaction(player.role) === 'syndicate'
+          ),
+          lobbyChatHistory: activeRooms[code].lobbyChatHistory || []
+        });
+        emitRoom(game);
+        systemMessage(game, `As engrenagens de ${player.name} voltaram a funcionar.`);
+      } catch (err) {
+        socket.emit('reconnectionError', { message: err.message || 'Não foi possível restaurar a sessão.' });
+      }
+    });
+
     socket.on('registerAccount', async ({ username, password } = {}) => {
       try {
         if (Player.db.readyState !== 1) {
@@ -437,7 +495,11 @@ function installSocketHandlers(io) {
         };
         const player = registerPlayer(socket, game, name);
         // Confirmação explícita usada pelo cliente para abrir o lobby.
-        socket.emit('roomCreated', { roomCode: code, playerId: player.id });
+        socket.emit('roomCreated', {
+          roomCode: code, playerId: player.id,
+          username: player.accountUsername || player.name,
+          reconnectToken: player.reconnectToken
+        });
       } catch (err) { error(socket, err); }
     }
 
@@ -712,7 +774,26 @@ function installSocketHandlers(io) {
     socket.on('sendMessage', handleSendMessage);
     socket.on('chatMessage', handleSendMessage); // compatibilidade com clientes anteriores
 
-    socket.on('disconnect', () => removeSocketFromRoom(socket));
+    socket.on('disconnect', () => {
+      const roomCode = playerRooms.get(socket.id);
+      const game = roomCode ? games.get(roomCode) : null;
+      const player = game?.getPlayer(socket.id);
+      if (game && player && ['NIGHT', 'DAY', 'VOTING', 'GAMEOVER'].includes(game.phase)) {
+        player.isDisconnected = true;
+        player.connected = false;
+        game.addLog(`${player.name} perdeu a ligação; a aguardar reconexão.`, 'system');
+        game.emit();
+        systemMessage(game, `As engrenagens de ${player.name} vacilaram. Aguardando reconexão...`);
+        const timer = setTimeout(() => {
+          disconnectTimers.delete(socket.id);
+          if (player.isDisconnected && player.id === socket.id) removeSocketFromRoom(socket);
+        }, 60_000);
+        timer.unref?.();
+        disconnectTimers.set(socket.id, timer);
+        return;
+      }
+      removeSocketFromRoom(socket);
+    });
   });
 
   return games;
