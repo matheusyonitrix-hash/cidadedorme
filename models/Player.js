@@ -54,6 +54,8 @@ const playerSchema = new Schema(
       copper_coins: { type: Number, default: 0, min: 0 },
       steam_gears: { type: Number, default: 0, min: 0 }
     },
+    unlocked_cosmetics: { type: [String], default: [] },
+    equipped_cosmetic: { type: String, default: null },
     stats: {
       games_played: { type: Number, default: 0, min: 0 },
       victories: { type: Number, default: 0, min: 0 },

@@ -5,6 +5,11 @@
   const landing = $('landing'), game = $('game'), lobbyPanel = $('lobbyPanel'), gamePanel = $('gamePanel');
   let state = null, playerId = null, roomCode = null, selectedTarget = null, toastTimer = null, revealedRole = null, revealTimer = null, gameOverPayload = null;
   let accountProfile = null, matchProgress = null;
+  const cosmetics = [
+    { id: 'titulo_mestre_caldeira', name: 'Mestre da Caldeira', price: 150, kind: 'TÍTULO', description: 'Um título de prestígio exibido ao lado do teu nome na lista da oficina.' },
+    { id: 'skin_borda_bronze', name: 'Filete de Bronze', price: 300, kind: 'MOLDURA', description: 'Uma borda de bronze para personalizar a tua identidade.' },
+    { id: 'skin_borda_ouro', name: 'Filete de Ouro', price: 600, kind: 'MOLDURA', description: 'Um acabamento dourado reservado aos grandes inventores.' }
+  ];
   const pendingLobbySends = [];
   // Durante a saída, eventos antigos da sala não podem voltar a abrir o lobby.
   let leavingRoom = false, leaveTimeout = null;
@@ -134,6 +139,8 @@
     $('accountProgress').classList.remove('hidden');
     $('accountProgressLabel').textContent = `${profile.username} · NÍVEL ${progress.level} · XP ${progress.xpIntoLevel}/${progress.xpRequired} · ${coins} COBRE`;
     $('accountXpBar').style.width = `${progress.percent}%`;
+    $('openBazarInGame').classList.remove('hidden');
+    renderBazar();
     $('accountWelcome').textContent = `Bem-vindo, ${profile.username}. O teu progresso está guardado na caldeira.`;
     $('accountForm').classList.add('hidden');
     $('accountActions').classList.remove('hidden');
@@ -157,6 +164,31 @@
     $('authFeedback').textContent = `${actionLabel}: conta ligada e progresso sincronizado.`;
     setAuthBusy(false);
     renderAccountProfile(profile);
+  }
+  function renderBazar() {
+    if (!accountProfile) return;
+    const unlocked = new Set(accountProfile.unlocked_cosmetics || []);
+    $('bazar-wallet').textContent = `Saldo: ${Number(accountProfile.currencies?.copper_coins) || 0} moedas de cobre`;
+    $('bazarItems').innerHTML = cosmetics.map(item => {
+      const owned = unlocked.has(item.id);
+      const equipped = accountProfile.equipped_cosmetic === item.id;
+      const action = !owned
+        ? `<button class="bazar-buy" data-buy-cosmetic="${item.id}" type="button">Comprar · ${item.price} ⚙</button>`
+        : item.id === 'titulo_mestre_caldeira'
+          ? `<button class="bazar-equip" data-equip-cosmetic="${equipped ? '' : item.id}" type="button">${equipped ? 'Equipado ✓' : 'Equipar título'}</button>`
+          : '<button class="bazar-buy owned" type="button" disabled>Adquirido ✓</button>';
+      return `<article class="bazar-item ${owned ? 'owned' : ''}"><div class="bazar-item-mark" aria-hidden="true">${item.kind === 'TÍTULO' ? '✦' : '◈'}</div><div class="bazar-item-copy"><span class="bazar-item-kind">${item.kind}</span><h3>${item.name}</h3><p>${item.description}</p></div><div class="bazar-item-action">${owned ? '<span class="bazar-owned">ADQUIRIDO</span>' : `<span class="bazar-price">${item.price} <small>COBRE</small></span>`}${action}</div></article>`;
+    }).join('');
+  }
+  function openBazar() {
+    if (!accountProfile) return showToast('Inicia sessão para visitar o Bazar a Vapor.');
+    renderBazar();
+    $('bazar-modal').classList.add('active');
+    $('bazar-modal').setAttribute('aria-hidden', 'false');
+  }
+  function closeBazar() {
+    $('bazar-modal').classList.remove('active');
+    $('bazar-modal').setAttribute('aria-hidden', 'true');
   }
   const classesModal = $('classes-modal');
   const classesOpenButton = $('classes-manual-open');
@@ -269,7 +301,7 @@
       $('rosterCount').textContent = String(state.players.length).padStart(2,'0');
       const lobbySlots = Array.from({ length: 16 }, (_, index) => state.players[index] || null);
       $('lobbyPlayers').innerHTML = lobbySlots.map((p, index) => p
-        ? `<div class="roster-row"><div class="avatar">${escapeHtml(p.name.slice(0,1).toUpperCase())}</div><span>${escapeHtml(p.name)}</span>${p.host?'<span class="host-mark">ANFITRIÃO</span>':''}${p.isReady?'<span class="ready-mark">PRONTO</span>':''}</div>`
+        ? `<div class="roster-row"><div class="avatar">${escapeHtml(p.name.slice(0,1).toUpperCase())}</div><span>${escapeHtml(p.name)}</span>${p.title?`<small class="player-cosmetic-title">${escapeHtml(p.title)}</small>`:''}${p.host?'<span class="host-mark">ANFITRIÃO</span>':''}${p.isReady?'<span class="ready-mark">PRONTO</span>':''}</div>`
         : `<div class="roster-row empty"><div class="avatar">${String(index + 1).padStart(2,'0')}</div><span>[Vago]</span></div>`).join('');
       const me = state.players.find(p=>p.id===playerId);
       $('readyButton').textContent = me?.isReady ? 'Cancelar pronto' : 'Marcar como pronto';
@@ -316,7 +348,7 @@
       const bribedClass = self && state.me?.bribeVoteControlled ? 'bribed-vote' : '';
       const bribeBadge = self && state.me?.bribeVoteLocked ? '<span class="bribe-badge" title="O teu voto foi confiscado">🪙 VOTO HERDADO</span>' : '';
       const directSyndicateTarget = canVoteSyndicateAttack || (state.phase === 'NIGHT' && state.me?.role === 'SABOTEUR' && canTarget);
-      return `<div class="player-row ${p.alive?'':'dead'} ${selected?'selected':''} ${state.phase==='VOTING'?'voting-card':''} ${bribedClass} ${directSyndicateTarget?'direct-target':''}" ${directSyndicateTarget?`data-player-target="${escapeHtml(p.id)}"`:''}>${badge}<div class="player-avatar">${p.alive?'⚙':'†'}</div><span class="player-name">${escapeHtml(p.name)}${self?' (tu)':''}</span>${bribeBadge}${role?`<span class="player-role">${escapeHtml(role)}</span>`:`<span class="player-state ${p.alive?'alive':'dead'}">${p.alive?'VIVO':'[DESTRUÍDO]'}</span>`}${directSyndicateTarget?'<span class="direct-target-hint">ALVO · CLICAR</span>':''}${controls}</div>`;
+      return `<div class="player-row ${p.alive?'':'dead'} ${selected?'selected':''} ${state.phase==='VOTING'?'voting-card':''} ${bribedClass} ${directSyndicateTarget?'direct-target':''}" ${directSyndicateTarget?`data-player-target="${escapeHtml(p.id)}"`:''}>${badge}<div class="player-avatar">${p.alive?'⚙':'†'}</div><span class="player-name">${escapeHtml(p.name)}${self?' (tu)':''}${p.title?` <small class="player-cosmetic-title">${escapeHtml(p.title)}</small>`:''}</span>${bribeBadge}${role?`<span class="player-role">${escapeHtml(role)}</span>`:`<span class="player-state ${p.alive?'alive':'dead'}">${p.alive?'VIVO':'[DESTRUÍDO]'}</span>`}${directSyndicateTarget?'<span class="direct-target-hint">ALVO · CLICAR</span>':''}${controls}</div>`;
     }).join('');
   }
   function quickNightAction(role) {
@@ -525,12 +557,27 @@
     accountProfile = null;
     matchProgress = null;
     $('accountProgress').classList.add('hidden');
+    $('openBazarInGame').classList.add('hidden');
     $('accountActions').classList.add('hidden');
     $('accountForm').classList.remove('hidden');
     $('accountUsername').value = '';
     $('accountPassword').value = '';
     $('authFeedback').textContent = 'Sessão terminada. Inicia sessão ou cria uma conta.';
     setAuthBusy(false);
+  });
+  $('openBazar').addEventListener('click', openBazar);
+  $('openBazarInGame').addEventListener('click', openBazar);
+  $('closeBazar').addEventListener('click', closeBazar);
+  $('bazar-modal').addEventListener('click', event => { if (event.target === $('bazar-modal')) closeBazar(); });
+  $('bazarItems').addEventListener('click', event => {
+    const buy = event.target.closest('[data-buy-cosmetic]');
+    if (buy) {
+      $('bazarFeedback').textContent = 'A negociar com a caldeira…';
+      socket.emit('buyCosmetic', { cosmeticId: buy.dataset.buyCosmetic });
+      return;
+    }
+    const equip = event.target.closest('[data-equip-cosmetic]');
+    if (equip) socket.emit('equipCosmetic', { cosmeticId: equip.dataset.equipCosmetic || null });
   });
   $('createRoom').onclick=()=>{
     const name=accountProfile?.username;
@@ -613,6 +660,17 @@
   socket.on('roomJoined',enterRoom);
   socket.on('registerSuccess', payload => acceptAccount(payload, 'Conta fundida com sucesso'));
   socket.on('loginSuccess', payload => acceptAccount(payload, 'Sessão iniciada'));
+  socket.on('purchaseSuccess', ({ account, cosmeticId } = {}) => {
+    if (account) renderAccountProfile(account);
+    $('bazarFeedback').textContent = 'Artigo adquirido e guardado na tua conta.';
+    renderBazar();
+  });
+  socket.on('cosmeticEquipped', ({ account } = {}) => {
+    if (account) renderAccountProfile(account);
+    $('bazarFeedback').textContent = account?.equipped_cosmetic ? 'Título equipado. A tripulação já o consegue ver.' : 'Título removido.';
+    renderBazar();
+  });
+  socket.on('purchaseError', ({ message } = {}) => { $('bazarFeedback').textContent = message || 'Não foi possível concluir a operação.'; });
   socket.on('accountError', ({ message } = {}) => {
     setAuthBusy(false);
     $('authFeedback').textContent = message || 'Falha na autenticação.';
@@ -700,7 +758,7 @@
   socket.on('updatePlayers',players=>{
     if(!state)return;
     const oldPlayers=new Map(state.players.map(p=>[p.id,p]));
-    state.players=players.map(p=>{const old=oldPlayers.get(p.id)||{};return {...old,id:p.id,name:p.name,host:p.isHost,alive:p.isAlive,isReady:p.isReady,isSilenced:Boolean(p.isSilenced)};});
+    state.players=players.map(p=>{const old=oldPlayers.get(p.id)||{};return {...old,id:p.id,name:p.name,title:p.title||null,host:p.isHost,alive:p.isAlive,isReady:p.isReady,isSilenced:Boolean(p.isSilenced)};});
     if(state.me){const me=players.find(p=>p.id===playerId);if(me)state.me.isSilenced=Boolean(me.isSilenced);}
     render();
   });

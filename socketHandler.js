@@ -6,6 +6,12 @@ const Player = require('./models/Player');
 
 const scryptAsync = promisify(scrypt);
 const USERNAME_PATTERN = /^[\p{L}\p{N}_-]{2,20}$/u;
+const COSMETIC_PRICES = Object.freeze({
+  titulo_mestre_caldeira: 150,
+  skin_borda_bronze: 300,
+  skin_borda_ouro: 600
+});
+const COSMETIC_TITLES = Object.freeze({ titulo_mestre_caldeira: 'Mestre da Caldeira' });
 
 function normalizeUsername(value) {
   return String(value || '').trim().toLocaleLowerCase('pt');
@@ -35,6 +41,8 @@ function accountPayload(player) {
       copper_coins: player.currencies?.copper_coins || 0,
       steam_gears: player.currencies?.steam_gears || 0
     },
+    unlocked_cosmetics: player.unlocked_cosmetics || [],
+    equipped_cosmetic: player.equipped_cosmetic || null,
     stats: {
       games_played: player.stats?.games_played || 0,
       victories: player.stats?.victories || 0,
@@ -62,7 +70,7 @@ function installSocketHandlers(io) {
   function roomRoster(game) {
     return [...game.players.values()].map((p) => ({
       id: p.id, name: p.name, isReady: Boolean(p.isReady), isAlive: Boolean(p.alive),
-      isHost: Boolean(p.host), isSilenced: Boolean(p.isSilenced)
+      isHost: Boolean(p.host), isSilenced: Boolean(p.isSilenced), title: p.cosmeticTitle || null
     }));
   }
 
@@ -219,6 +227,7 @@ function installSocketHandlers(io) {
     if (socket.data.account) {
       player.accountUsername = socket.data.account.username;
       player.accountLevel = socket.data.account.level || 1;
+      player.cosmeticTitle = COSMETIC_TITLES[socket.data.account.equipped_cosmetic] || null;
     }
     playerRooms.set(socket.id, game.roomCode);
     socket.join(game.roomCode);
@@ -299,7 +308,7 @@ function installSocketHandlers(io) {
           xp: 0
         });
         const account = accountPayload(player);
-        socket.data.account = { id: account.id, username: account.username, level: account.level };
+        socket.data.account = { id: account.id, username: account.username, level: account.level, equipped_cosmetic: account.equipped_cosmetic, unlocked_cosmetics: account.unlocked_cosmetics };
         socket.emit('registerSuccess', { account });
       } catch (err) {
         const message = err.code === 11000 ? 'Esse usuário já está registado.' : err.message;
@@ -322,7 +331,7 @@ function installSocketHandlers(io) {
           throw new Error('Usuário ou senha incorretos.');
         }
         const account = accountPayload(player);
-        socket.data.account = { id: account.id, username: account.username, level: account.level };
+        socket.data.account = { id: account.id, username: account.username, level: account.level, equipped_cosmetic: account.equipped_cosmetic, unlocked_cosmetics: account.unlocked_cosmetics };
         socket.emit('loginSuccess', { account });
       } catch (err) {
         socket.emit('accountError', { action: 'login', message: err.message || 'Não foi possível iniciar sessão.' });
@@ -336,6 +345,67 @@ function installSocketHandlers(io) {
       }
       socket.data.account = null;
       socket.emit('logoutSuccess');
+    });
+
+    socket.on('buyCosmetic', async ({ cosmeticId } = {}) => {
+      try {
+        if (!socket.data.account?.username) throw new Error('Inicia sessão para comprar itens no Bazar.');
+        if (Player.db.readyState !== 1) throw new Error('O Bazar está indisponível sem ligação ao MongoDB.');
+        if (typeof cosmeticId !== 'string' || !Object.hasOwn(COSMETIC_PRICES, cosmeticId)) {
+          throw new Error('Este artigo não existe no Bazar.');
+        }
+        const price = COSMETIC_PRICES[cosmeticId];
+
+        // A condição e a dedução vivem na mesma operação MongoDB: dois cliques
+        // concorrentes não podem cobrar duas vezes nem deixar saldo negativo.
+        const profile = await Player.findOneAndUpdate(
+          {
+            username: socket.data.account.username,
+            unlocked_cosmetics: { $ne: cosmeticId },
+            'currencies.copper_coins': { $gte: price }
+          },
+          { $inc: { 'currencies.copper_coins': -price }, $push: { unlocked_cosmetics: cosmeticId } },
+          { new: true, runValidators: true }
+        );
+
+        if (!profile) {
+          const current = await Player.findOne({ username: socket.data.account.username });
+          if (!current) throw new Error('Não foi possível localizar o teu perfil.');
+          if (current.unlocked_cosmetics?.includes(cosmeticId)) throw new Error('Já adquiriste este artigo.');
+          throw new Error(`Saldo insuficiente. Este artigo custa ${price} moedas de cobre.`);
+        }
+        socket.data.account.unlocked_cosmetics = profile.unlocked_cosmetics || [];
+        socket.emit('purchaseSuccess', { cosmeticId, price, account: accountPayload(profile) });
+      } catch (err) {
+        socket.emit('purchaseError', { message: err.message || 'Não foi possível concluir a compra.' });
+      }
+    });
+
+    socket.on('equipCosmetic', async ({ cosmeticId } = {}) => {
+      try {
+        if (!socket.data.account?.username) throw new Error('Inicia sessão para equipar um artigo.');
+        if (cosmeticId !== null && !COSMETIC_TITLES[cosmeticId]) throw new Error('Este artigo não pode ser equipado como título.');
+        const filter = { username: socket.data.account.username };
+        if (cosmeticId) filter.unlocked_cosmetics = cosmeticId;
+        const profile = await Player.findOneAndUpdate(
+          filter,
+          { $set: { equipped_cosmetic: cosmeticId || null } },
+          { new: true, runValidators: true }
+        );
+        if (!profile) throw new Error('Adquire o título antes de o equipar.');
+        socket.data.account.equipped_cosmetic = profile.equipped_cosmetic || null;
+        socket.data.account.unlocked_cosmetics = profile.unlocked_cosmetics || [];
+
+        const game = getGame(socket);
+        if (game) {
+          const player = game.getPlayer(socket.id);
+          if (player) player.cosmeticTitle = COSMETIC_TITLES[cosmeticId] || null;
+          emitRoom(game);
+        }
+        socket.emit('cosmeticEquipped', { account: accountPayload(profile) });
+      } catch (err) {
+        socket.emit('purchaseError', { message: err.message || 'Não foi possível equipar este artigo.' });
+      }
     });
 
     function createRoomForPlayer(name, isDebug = false) {

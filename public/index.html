@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20261027-1">
+  <link rel="stylesheet" href="style.css?v=20261027-2">
 </head>
 <body>
   <main id="landing" class="landing">
@@ -31,6 +31,7 @@
         <div id="accountActions" class="hidden">
           <div class="section-kicker auth-kicker">CALDEIRA AUTENTICADA</div>
           <p id="accountWelcome" class="account-welcome"></p>
+          <button id="openBazar" class="button button-secondary bazar-open" type="button">🏪 Bazar a Vapor</button>
           <button id="createRoom" class="button button-primary">⚙ Entrar numa Oficina <span>↗</span></button>
           <div class="divider"><span></span> ou entra numa oficina privada <span></span></div>
           <div class="join-row"><input id="roomInput" maxlength="5" placeholder="CÓDIGO" autocomplete="off"><button id="joinRoom" class="button button-secondary">Entrar</button></div>
@@ -136,6 +137,14 @@
     </section>
     <div id="toast" class="toast hidden"></div>
   </main>
-  <script src="/socket.io/socket.io.js"></script><script src="/app.js?v=20261024-20"></script>
+  <button id="openBazarInGame" class="manual-open bazar-header-open hidden" type="button">🏪 Bazar a Vapor</button>
+  <section id="bazar-modal" class="bazar-modal" role="dialog" aria-modal="true" aria-labelledby="bazar-title" aria-hidden="true">
+    <div class="bazar-dialog">
+      <header class="bazar-heading"><div><div class="section-kicker">OFICINA DE ADORNOS · DISTRITO DA FULIGEM</div><h2 id="bazar-title">Bazar a Vapor</h2><p id="bazar-wallet">Saldo: 0 moedas de cobre</p></div><button id="closeBazar" class="bazar-close" type="button" aria-label="Fechar bazar">×</button></header>
+      <div id="bazarItems" class="bazar-items"></div>
+      <p id="bazarFeedback" class="bazar-feedback" aria-live="polite">As aquisições ficam guardadas na tua conta.</p>
+    </div>
+  </section>
+  <script src="/socket.io/socket.io.js"></script><script src="/app.js?v=20261027-2"></script>
 </body>
 </html>
