@@ -248,20 +248,35 @@ class Game {
     let deck;
 
     if (debugEnabled) {
-      // Cenário QA determinístico: host inocente, Cientista, Sabotador e
-      // Alquimista nos três primeiros bots; todos os restantes são Operários.
+      // Cenário QA determinístico para uma oficina com Yokki_QA e onze bots.
+      // A atribuição pelo nome mantém os cargos estáveis mesmo se os sockets
+      // dos bots terminarem de conectar fora de ordem.
       const debugRolesByName = new Map([
-        ['mecânico_bot_1', ROLES.MAD_SCIENTIST],
-        ['mecânico_bot_2', ROLES.SABOTEUR],
-        ['mecânico_bot_3', ROLES.ALCHEMIST]
+        ['mecânico_bot_1', ROLES.SABOTEUR],
+        ['mecânico_bot_2', ROLES.MAD_SCIENTIST],
+        ['mecânico_bot_3', ROLES.SOUL_COLLECTOR],
+        ['mecânico_bot_4', ROLES.ALCHEMIST],
+        ['mecânico_bot_5', ROLES.BRONZE_SMITH],
+        ['mecânico_bot_6', ROLES.TESLA_ENGINEER],
+        ['mecânico_bot_7', ROLES.REVERSE_ENGINEER],
+        ['mecânico_bot_8', ROLES.SMOKE],
+        ['mecânico_bot_9', ROLES.COPPER_BANKER],
+        ['mecânico_bot_10', ROLES.CLANDESTINE_INFORMANT],
+        ['mecânico_bot_11', ROLES.SCRAP_COLLECTOR]
       ]);
+      const debugRoleSequence = [
+        ROLES.CLOCKMAKER, ROLES.SABOTEUR, ROLES.MAD_SCIENTIST,
+        ROLES.SOUL_COLLECTOR, ROLES.ALCHEMIST, ROLES.BRONZE_SMITH,
+        ROLES.TESLA_ENGINEER, ROLES.REVERSE_ENGINEER, ROLES.SMOKE,
+        ROLES.COPPER_BANKER, ROLES.CLANDESTINE_INFORMANT, ROLES.SCRAP_COLLECTOR
+      ];
       const rolesById = new Map();
-      // O anfitrião fica como Operário para poder acompanhar o teste sem ter
-      // de submeter uma investigação manual para a noite avançar.
-      if (host) rolesById.set(host.id, ROLES.WORKER);
-      for (const player of players) {
-        const fixedRole = debugRolesByName.get(player.name.trim().toLocaleLowerCase('pt'));
-        if (fixedRole) rolesById.set(player.id, fixedRole);
+      for (const [index, player] of players.entries()) {
+        const normalizedName = player.name.trim().toLocaleLowerCase('pt');
+        const fixedRole = player.host
+          ? ROLES.CLOCKMAKER
+          : debugRolesByName.get(normalizedName) || debugRoleSequence[index] || ROLES.WORKER;
+        rolesById.set(player.id, fixedRole);
       }
       deck = players.map((player) => rolesById.get(player.id) || ROLES.WORKER);
       this.isDebug = true;

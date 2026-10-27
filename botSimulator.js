@@ -5,7 +5,7 @@
  *   npm install socket.io-client
  *
  * Uso (a sala deve existir e o servidor deve estar a correr):
- *   node botSimulator.js ME9QD 7
+ *   node botSimulator.js ME9QD 11
  *
  * Opcionalmente, altera o endereço do servidor com SERVER_URL:
  *   $env:SERVER_URL = 'http://localhost:3000'
@@ -135,73 +135,101 @@ function maybePerformQaNightAction(bot, gameState = bot.state) {
   const players = gameState.players || [];
   const livingPlayers = players.filter((player) => player.alive !== false && player.id !== bot.playerId);
   const host = players.find((player) => player.host && player.alive !== false);
-
-  // Mecânicas gerais: os dados públicos mantêm a identidade dos vivos secreta,
-  // pelo que o simulador escolhe qualquer alvo vivo fora da sua própria ficha.
-  if (actorRole === 'SOUL_COLLECTOR' || /colecionador de almas mecânicas/i.test(bot.roleName || '')) {
-    const targets = livingPlayers.filter((player) => player.isMechanized !== true);
-    const target = randomItem(targets);
-    if (!target) return;
+  const livingNamed = (name) => players.find((player) => player.name === name && player.alive !== false);
+  const sendAction = (eventName, target, description) => {
+    if (!target) return false;
     bot.lastNightActionDay = night;
-    bot.socket.emit('nightAction_Mechanize', { targetId: target.id });
-    debugLog(`⚙️ [DEBUG] ${bot.name} (Colecionador de Almas Mecânicas) mecanizou ${target.name}.`);
+    bot.socket.emit(eventName, { targetId: target.id });
+    debugLog(`⚙️ [QA-MODE] ${bot.name} (${bot.roleName || actorRole}) ${description} ${target.name} na Noite ${night}.`);
+    return true;
+  };
+
+  // Os alvos fixos abaixo correspondem ao alinhamento determinístico de 12
+  // jogadores: Bot 1–11 representam as classes especiais do cenário QA.
+  if (actorRole === 'SOUL_COLLECTOR' || /colecionador de almas mecânicas/i.test(bot.roleName || '')) {
+    const preferred = livingNamed('Mecânico_Bot_4');
+    const targets = livingPlayers.filter((player) => player.isMechanized !== true);
+    const target = preferred && preferred.isMechanized !== true ? preferred : randomItem(targets);
+    sendAction('nightAction_Mechanize', target, 'injetou engrenagens em');
     return;
   }
 
   if (actorRole === 'COPPER_BANKER' || /banqueiro de cobre/i.test(bot.roleName || '')) {
-    // O servidor só revela a equipa aos membros do Sindicato. Excluímos os
-    // companheiros conhecidos e escolhemos aleatoriamente entre os restantes.
     const syndicateIds = new Set((gameState.syndicate || []).map((player) => player.id));
     const candidates = livingPlayers.filter((player) => !syndicateIds.has(player.id));
-    const target = randomItem(candidates);
-    if (!target) return;
-    bot.lastNightActionDay = night;
-    bot.socket.emit('nightAction_Bribe', { targetId: target.id });
-    debugLog(`🪙 [DEBUG] ${bot.name} (Banqueiro de Cobre) subornou ${target.name}.`);
+    const preferred = livingNamed('Mecânico_Bot_5');
+    const target = preferred && !syndicateIds.has(preferred.id) ? preferred : randomItem(candidates);
+    sendAction('nightAction_Bribe', target, 'subornou');
     return;
   }
 
   if (actorRole === 'SABOTEUR' || /sabotador/i.test(bot.roleName || '')) {
     const syndicateIds = new Set((gameState.syndicate || []).map((player) => player.id));
     const targets = livingPlayers.filter((player) => !syndicateIds.has(player.id));
-    const target = (bot.name === 'Mecânico_Bot_2' && host && !syndicateIds.has(host.id))
+    const target = host && !syndicateIds.has(host.id)
       ? host
       : randomItem(targets);
-    if (!target) return;
-    bot.lastNightActionDay = night;
-    bot.socket.emit('nightAction_Kill', { targetId: target.id });
-    debugLog(`⚔️ [DEBUG] ${bot.name} (Sabotador) escolheu ${target.name} para o ataque do Sindicato.`);
+    if (target) bot.socket.emit('syndicateTargetSelection', { targetId: target.id });
+    sendAction('nightAction_Kill', target, 'escolheu como alvo do Sindicato');
     return;
   }
 
-  // Cenários QA determinísticos existentes para verificar óleo e proteção.
-  if (bot.name === 'Mecânico_Bot_1' && actorRole === 'MAD_SCIENTIST') {
-    if (night === 3) {
-      bot.lastNightActionDay = night;
-      bot.socket.emit('nightAction_DetonateOil');
-      debugLog(`💥 [QA-MODE] ${bot.name} (Cientista Louco) enviou ordem de DETONAÇÃO na Noite 3.`);
-      return;
+  if (actorRole === 'MAD_SCIENTIST' || /cientista louco/i.test(bot.roleName || '')) {
+    bot.qaOiledTargetIds ||= new Set();
+    const preferred = livingNamed('Mecânico_Bot_6');
+    const preferredNotMarked = preferred && !bot.qaOiledTargetIds.has(preferred.id);
+    const target = preferredNotMarked
+      ? preferred
+      : randomItem(livingPlayers.filter((player) => !bot.qaOiledTargetIds.has(player.id)));
+    if (sendAction('nightAction_PumpOil', target, 'bombeou óleo em')) {
+      bot.qaOiledTargetIds.add(target.id);
+      const targetName = target.name;
+      debugLog(`🛢️ [QA-MODE] Cientista marcou ${targetName} em segredo.`);
     }
-    if (night === 1 || night === 2) {
-      const targetName = night === 1 ? 'Mecânico_Bot_3' : 'Mecânico_Bot_4';
-      const target = players.find((player) => player.name === targetName && player.alive);
-      if (!target) {
-        debugLog(`⚠️ [QA-MODE] ${bot.name}: ${targetName} não está presente/vivo na Noite ${night}.`);
-        return;
-      }
-      bot.lastNightActionDay = night;
-      bot.socket.emit('nightAction_PumpOil', { targetId: target.id });
-      debugLog(`🛢️ [QA-MODE] ${bot.name} bombeou óleo em ${targetName} na Noite ${night}.`);
-      return;
-    }
+    return;
   }
 
-  // O Bot 3 protege o anfitrião, que também é o alvo prioritário do Sabotador.
-  if (bot.name === 'Mecânico_Bot_3' && actorRole === 'ALCHEMIST') {
-    if (!host?.alive || host.id === bot.playerId) return;
+  if (actorRole === 'ALCHEMIST') {
+    sendAction('nightAction_Protect', host && host.id !== bot.playerId ? host : randomItem(livingPlayers), 'protegeu');
+    return;
+  }
+
+  if (actorRole === 'BRONZE_SMITH') {
+    if ((Number(gameState.me.bronzeCharges) || 0) <= 0) return;
     bot.lastNightActionDay = night;
-    bot.socket.emit('nightAction_Protect', { targetId: host.id });
-    debugLog(`🛡️ [QA-MODE] ${bot.name} (Alquimista) protegeu ${host.name} na Noite ${night}.`);
+    bot.socket.emit('nightAction_ActivateAlert');
+    debugLog(`🔥 [QA-MODE] ${bot.name} (Ferreiro de Bronze) ativou a Fornalha de Pressão na Noite ${night}.`);
+    return;
+  }
+
+  if (actorRole === 'TESLA_ENGINEER') {
+    sendAction('nightAction_Watch', livingNamed('Mecânico_Bot_1') || randomItem(livingPlayers), 'vigiou');
+    return;
+  }
+
+  if (actorRole === 'REVERSE_ENGINEER') {
+    const candidates = gameState.me.reverseCandidates || [];
+    const candidate = randomItem(candidates);
+    if (!candidate) return; // O cargo só tem uma ação elegível após haver um morto votado.
+    bot.lastNightActionDay = night;
+    bot.socket.emit('playerAction', {
+      action: 'reverseAnalyze',
+      targetId: candidate.deadTargetId,
+      secondTargetId: candidate.suspectId
+    });
+    debugLog(`⚙️ [QA-MODE] ${bot.name} (Engenheiro Reverso) analisou os destroços de ${candidate.deadTargetName}.`);
+    return;
+  }
+
+  if (actorRole === 'SMOKE') {
+    const saboteur = livingNamed('Mecânico_Bot_1');
+    if (saboteur && saboteur.id !== bot.playerId) sendAction('nightAction_Disguise', saboteur, 'disfarçou');
+    return;
+  }
+
+  if (actorRole === 'CLANDESTINE_INFORMANT') {
+    sendAction('nightAction_Silence', livingNamed('Mecânico_Bot_7'), 'chantageou');
+    return;
   }
 }
 

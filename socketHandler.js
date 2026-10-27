@@ -613,7 +613,8 @@ function installSocketHandlers(io) {
       nightAction_Watch: 'watch',
       nightAction_Revive: 'revive',
       nightAction_Spy: 'spy',
-      nightAction_Bribe: 'bribe'
+      nightAction_Bribe: 'bribe',
+      nightAction_Silence: 'silence'
     };
     for (const [eventName, action] of Object.entries(nightActionAliases)) {
       socket.on(eventName, ({ targetId } = {}) => {
