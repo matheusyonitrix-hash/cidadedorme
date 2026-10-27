@@ -273,6 +273,47 @@
     $('history-modal').classList.remove('active');
     $('history-modal').setAttribute('aria-hidden', 'true');
   }
+  let leaderboardController = null;
+  function renderLeaderboardRows(items, metric) {
+    if (!items?.length) return '<p class="leaderboard-empty">Ainda não há registos nesta caldeira.</p>';
+    return items.map((player, index) => {
+      const value = metric === 'level'
+        ? `NÍVEL ${Number(player.level) || 1}`
+        : `${(Number(player.copper_coins) || 0).toLocaleString('pt-PT')} COBRE`;
+      return `<div class="leaderboard-row"><span class="leaderboard-rank">${String(index + 1).padStart(2, '0')}</span><span class="leaderboard-username">${escapeHtml(player.username || 'Mecânico')}</span><strong class="leaderboard-value">${value}</strong></div>`;
+    }).join('');
+  }
+  async function openLeaderboard() {
+    const modal = $('leaderboard-modal');
+    modal.classList.add('active');
+    modal.setAttribute('aria-hidden', 'false');
+    $('prestigeLeaderboard').innerHTML = '<p class="leaderboard-empty">A consultar os registos…</p>';
+    $('fortuneLeaderboard').innerHTML = '<p class="leaderboard-empty">A consultar os registos…</p>';
+    $('leaderboardFeedback').textContent = '';
+    leaderboardController?.abort();
+    leaderboardController = new AbortController();
+    try {
+      const response = await fetch('/leaderboard', { cache: 'no-store', signal: leaderboardController.signal });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Não foi possível carregar o ranking.');
+      $('prestigeLeaderboard').innerHTML = renderLeaderboardRows(data.prestige, 'level');
+      $('fortuneLeaderboard').innerHTML = renderLeaderboardRows(data.fortunes, 'coins');
+    } catch (error) {
+      if (error.name === 'AbortError') return;
+      $('prestigeLeaderboard').replaceChildren();
+      $('fortuneLeaderboard').replaceChildren();
+      $('leaderboardFeedback').textContent = error.message || 'A Mesa de Engenharia está indisponível.';
+    }
+  }
+  function closeLeaderboard() {
+    leaderboardController?.abort();
+    leaderboardController = null;
+    $('leaderboard-modal').classList.remove('active');
+    $('leaderboard-modal').setAttribute('aria-hidden', 'true');
+    $('prestigeLeaderboard').replaceChildren();
+    $('fortuneLeaderboard').replaceChildren();
+    $('leaderboardFeedback').textContent = '';
+  }
   const classesModal = $('classes-modal');
   const classesOpenButton = $('classes-manual-open');
   let classesCloseTimer = null;
@@ -313,6 +354,7 @@
     }
     matchProgress = null;
     $('roomCodeLabel').textContent = roomCode;
+    $('openLeaderboard').classList.remove('hidden');
     landing.classList.add('hidden'); game.classList.remove('hidden');
     // Mostra já a oficina, sem esperar pelo primeiro gameState do servidor.
     lobbyPanel.classList.remove('hidden');
@@ -380,6 +422,7 @@
     // uma transição já recebida para LOBBY.
     const isGameOver = state.phase === 'GAMEOVER';
     lobbyPanel.classList.toggle('hidden', !inLobby);
+    $('openLeaderboard').classList.toggle('hidden', !inLobby);
     gamePanel.classList.toggle('hidden', inLobby || isGameOver);
     $('victoryBanner').classList.toggle('hidden', !isGameOver);
     document.body.classList.toggle('game-over', isGameOver);
@@ -663,6 +706,12 @@
   $('openHistoryInGame').addEventListener('click', openHistory);
   $('closeHistory').addEventListener('click', closeHistory);
   $('history-modal').addEventListener('click', event => { if (event.target === $('history-modal')) closeHistory(); });
+  $('openLeaderboard').addEventListener('click', openLeaderboard);
+  $('closeLeaderboard').addEventListener('click', closeLeaderboard);
+  $('leaderboard-modal').addEventListener('click', event => { if (event.target === $('leaderboard-modal')) closeLeaderboard(); });
+  document.addEventListener('keydown', event => {
+    if (event.key === 'Escape' && $('leaderboard-modal').classList.contains('active')) closeLeaderboard();
+  });
   $('togglePlayerProfile').addEventListener('click', () => {
     const panel = $('playerProfilePanel');
     const isOpen = panel.classList.toggle('is-open');

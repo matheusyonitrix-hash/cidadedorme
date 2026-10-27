@@ -85,6 +85,11 @@ const playerSchema = new Schema(
   }
 );
 
+// Índices compostos para servir os dois rankings sem ordenar toda a coleção
+// a cada abertura da Mesa de Engenharia.
+playerSchema.index({ level: -1, xp: -1, username: 1 });
+playerSchema.index({ 'currencies.copper_coins': -1, username: 1 });
+
 /** Mantém o nível coerente quando um documento é criado/editado via save(). */
 playerSchema.pre('save', function updateLevelFromXp(next) {
   this.level = levelForXp(this.xp || 0);

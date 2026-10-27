@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20261027-5">
+  <link rel="stylesheet" href="style.css?v=20261027-6">
 </head>
 <body>
   <main id="landing" class="landing">
@@ -57,7 +57,7 @@
   </main>
 
   <main id="game" class="game hidden">
-    <header class="topbar"><button id="btn-back-to-menu" type="button">⬅️ Voltar para o Menu</button><a class="brand" href="#"><span>⚙</span> A CIDADE <em>DORME</em></a><div class="room-badge"><div class="room-code-line">OFICINA <strong id="roomCodeLabel">—</strong><button id="copyCode" title="Copiar código">⧉</button></div><button id="classes-manual-open" class="manual-open" type="button" aria-haspopup="dialog" aria-controls="classes-modal">📜 Manual de Classes</button><div id="accountProgress" class="account-progress hidden"><div id="accountProgressLabel"></div><div class="account-xp-track"><span id="accountXpBar"></span></div></div></div><div class="topbar-status"><button id="audioToggle" class="audio-toggle" type="button" aria-pressed="false" aria-label="Ativar som dos cliques" title="Ativar som dos cliques">🔇 CLIQUES MUDOS</button><span class="connection-dot"></span><span id="connectionLabel">LIGADO</span></div></header>
+    <header class="topbar"><button id="btn-back-to-menu" type="button">⬅️ Voltar para o Menu</button><a class="brand" href="#"><span>⚙</span> A CIDADE <em>DORME</em></a><div class="room-badge"><div class="room-code-line">OFICINA <strong id="roomCodeLabel">—</strong><button id="copyCode" title="Copiar código">⧉</button></div><button id="classes-manual-open" class="manual-open" type="button" aria-haspopup="dialog" aria-controls="classes-modal">📜 Manual de Classes</button><div id="accountProgress" class="account-progress hidden"><div id="accountProgressLabel"></div><div class="account-xp-track"><span id="accountXpBar"></span></div></div></div><div class="topbar-status"><button id="openLeaderboard" class="leaderboard-open hidden" type="button">🏆 Ranking Geral</button><button id="audioToggle" class="audio-toggle" type="button" aria-pressed="false" aria-label="Ativar som dos cliques" title="Ativar som dos cliques">🔇 CLIQUES MUDOS</button><span class="connection-dot"></span><span id="connectionLabel">LIGADO</span></div></header>
     <section id="lobbyPanel" class="lobby-panel hidden"><div class="lobby-copy"><div class="eyebrow">A OFICINA ESTÁ ABERTA</div><h2>Reúne a tua<br><em>tripulação.</em></h2><p>São precisos entre 2 e 16 jogadores para a sirene tocar.</p><div id="lobbyCount" class="lobby-count">01 <span>/ 02 MÍNIMO</span></div><div class="lobby-buttons"><button id="readyButton" class="button button-secondary">Marcar como pronto</button><button id="startGame" class="button button-primary">Dar início à noite <span>↗</span></button></div><p id="hostHint" class="subtle"></p></div><div class="lobby-right-column"><div class="lobby-roster"><div class="section-kicker">NA OFICINA <span id="rosterCount">00</span></div><div id="lobbyPlayers" class="roster-list"></div></div><section class="lobby-chat-container" aria-label="Chat da oficina"><div class="lobby-chat-heading"><div><div class="section-kicker">FREQUÊNCIA LOCAL</div><h3>Conversa da Oficina</h3></div><span>PRÉ-JOGO</span></div><div id="lobby-chat-messages" class="lobby-chat-messages" aria-live="polite"><div class="lobby-chat-empty">A oficina está em silêncio.<br>Inicia a conversa com a tripulação.</div></div><form class="lobby-chat-controls" id="lobby-chat-form"><input type="text" id="lobby-chat-input" maxlength="500" placeholder="Converse com a oficina..." autocomplete="off"><button type="submit" id="btn-send-lobby-message">Enviar</button></form></section></div></section>
     <section id="gamePanel" class="game-layout hidden">
       <aside class="left-column"><div class="phase-card"><div id="phaseIcon" class="phase-icon">☾</div><div class="section-kicker" id="dayLabel">NOITE 01</div><h2 id="phaseTitle">A cidade<br><em>dorme.</em></h2><div class="timer-track"><div id="timerBar"></div></div><div class="timer-label"><span id="phaseHint">Ouve o silêncio.</span><strong id="timerText">45s</strong></div></div>
@@ -167,6 +167,19 @@
       <p id="historyEmpty" class="history-empty hidden">Nenhum registo encontrado nas caldeiras da cidade.</p>
     </div>
   </section>
-  <script src="/socket.io/socket.io.js"></script><script src="/app.js?v=20261027-5"></script>
+  <section id="leaderboard-modal" class="leaderboard-modal" role="dialog" aria-modal="true" aria-labelledby="leaderboard-title" aria-hidden="true">
+    <div class="leaderboard-dialog">
+      <header class="leaderboard-heading">
+        <div><div class="section-kicker">PRESTÍGIO E FORTUNA · DISTRITO DA FULIGEM</div><h2 id="leaderboard-title">Mesa de Engenharia</h2><p>Líderes do Distrito</p></div>
+        <button id="closeLeaderboard" class="bazar-close" type="button" aria-label="Fechar ranking">×</button>
+      </header>
+      <div class="leaderboard-columns">
+        <section class="leaderboard-column"><div class="section-kicker">OS 10 MAIORES INVENTORES</div><div id="prestigeLeaderboard" class="leaderboard-list"></div></section>
+        <section class="leaderboard-column"><div class="section-kicker">OS 10 MAGNATAS DO COBRE</div><div id="fortuneLeaderboard" class="leaderboard-list"></div></section>
+      </div>
+      <p id="leaderboardFeedback" class="leaderboard-feedback" aria-live="polite"></p>
+    </div>
+  </section>
+  <script src="/socket.io/socket.io.js"></script><script src="/app.js?v=20261027-7"></script>
 </body>
 </html>

@@ -6,6 +6,7 @@ const { Server } = require('socket.io');
 const { installSocketHandlers, activeRooms } = require('./socketHandler');
 const { connectDB, closeDB } = require('./database');
 const { getFactionName, getFaction, getRoleInfo } = require('./roles');
+const Player = require('./models/Player');
 
 const app = express();
 const server = http.createServer(app);
@@ -13,6 +14,38 @@ const io = new Server(server, { cors: { origin: false }, maxHttpBufferSize: 1e6 
 const games = installSocketHandlers(io);
 app.use(express.static(path.join(__dirname, 'public')));
 app.get('/health', (_req, res) => res.json({ status: 'ok' }));
+app.get('/leaderboard', async (_req, res) => {
+  res.set('Cache-Control', 'no-store');
+  if (Player.db.readyState !== 1) {
+    return res.status(503).json({
+      error: 'A Mesa de Engenharia está sem pressão no manómetro de dados. Tenta novamente mais tarde.'
+    });
+  }
+
+  try {
+    const [prestige, fortunes] = await Promise.all([
+      Player.find({}, { username: 1, level: 1, xp: 1, _id: 0 })
+        .sort({ level: -1, xp: -1, username: 1 })
+        .limit(10)
+        .lean(),
+      Player.find({}, { username: 1, 'currencies.copper_coins': 1, _id: 0 })
+        .sort({ 'currencies.copper_coins': -1, username: 1 })
+        .limit(10)
+        .lean()
+    ]);
+
+    return res.json({
+      prestige: prestige.map(({ username, level }) => ({ username, level })),
+      fortunes: fortunes.map(({ username, currencies }) => ({
+        username,
+        copper_coins: currencies?.copper_coins || 0
+      }))
+    });
+  } catch (error) {
+    console.error(`❌ [LEADERBOARD] Falha ao consultar a Mesa de Engenharia: ${error.message}`);
+    return res.status(500).json({ error: 'A Mesa de Engenharia teve uma falha. Tenta novamente.' });
+  }
+});
 app.get('/admin/status', (req, res) => {
   res.set('Cache-Control', 'no-store');
 
