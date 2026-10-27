@@ -10,7 +10,7 @@ const { getFactionName, getFaction, getRoleInfo } = require('./roles');
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: false }, maxHttpBufferSize: 1e6 });
-installSocketHandlers(io);
+const games = installSocketHandlers(io);
 app.use(express.static(path.join(__dirname, 'public')));
 app.get('/health', (_req, res) => res.json({ status: 'ok' }));
 app.get('/admin/status', (req, res) => {
@@ -55,6 +55,32 @@ app.get('/admin/status', (req, res) => {
 // continuar a servir o ecrã principal em vez de devolver Cannot GET.
 app.get('*', (_req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 
+const ROOM_CLEANUP_INTERVAL_MS = 5 * 60 * 1000;
+const EMPTY_LOBBY_TTL_MS = 15 * 60 * 1000;
+const roomCleanupTimer = setInterval(() => {
+  const now = Date.now();
+
+  for (const [roomCode, room] of Object.entries(activeRooms)) {
+    const players = Array.isArray(room.players) ? room.players : [];
+    const hasConnectedPlayers = players.some((player) => player.connected !== false);
+    const inactiveLobbySince = room.lastDisconnectedAt || room.lastActivityAt || room.createdAt || now;
+    const inactiveLobby = room.gameState === 'LOBBY' && !hasConnectedPlayers &&
+      now - inactiveLobbySince >= EMPTY_LOBBY_TTL_MS;
+    const emptyRoom = players.length === 0;
+
+    if (emptyRoom || inactiveLobby) {
+      delete activeRooms[roomCode];
+      const game = games.get(roomCode);
+      if (game) {
+        game.dispose();
+        games.delete(roomCode);
+      }
+      console.log(`🧹 [ROOM-GC] Oficina ${roomCode} removida (${emptyRoom ? 'sem jogadores' : 'lobby inativo há 15 minutos'}).`);
+    }
+  }
+}, ROOM_CLEANUP_INTERVAL_MS);
+roomCleanupTimer.unref();
+
 const PORT = process.env.PORT || 3000;
 async function startServer() {
   // O Render não fornece MongoDB local. Sem MONGODB_URI, o servidor do jogo
@@ -79,6 +105,7 @@ let isShuttingDown = false;
 async function shutdown() {
   if (isShuttingDown) return;
   isShuttingDown = true;
+  clearInterval(roomCleanupTimer);
   try {
     // io.close também encerra o servidor HTTP associado e os sockets ativos.
     await new Promise((resolve) => io.close(resolve));

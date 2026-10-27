@@ -764,6 +764,7 @@ class Game {
     for (const targetId of this.votes.values()) if (targetId) counts.set(targetId, (counts.get(targetId) || 0) + 1);
     const highest = Math.max(0, ...counts.values());
     const leaders = [...counts].filter(([, count]) => count === highest && highest > 0).map(([id]) => id);
+    const tied = leaders.length > 1;
     if (leaders.length === 1) {
       const target = this.getPlayer(leaders[0]);
       if (this.testMode) {
@@ -772,11 +773,21 @@ class Game {
         this.eliminate(target, 'lynch');
         this.addLog(`${target.name} foi lançado à Fornalha. Era ${getRoleInfo(target.role).name}.`, 'death');
       }
-    } else this.addLog(highest === 0 ? 'Ninguém recebeu votos. A Fornalha permanece apagada.' : 'Houve empate. Ninguém foi lançado à Fornalha.', 'system');
+    } else if (tied) {
+      const message = '[TRIBUNAL] O comitê de bronze ficou dividido! Houve um empate na votação e ninguém será enviado para a Fornalha hoje.';
+      this.addLog('Houve empate. Ninguém foi lançado à Fornalha.', 'system');
+      this.onSystemMessage?.(message);
+    } else {
+      this.addLog('Ninguém recebeu votos. A Fornalha permanece apagada.', 'system');
+    }
     // O suborno é temporário: termina com esta votação, mesmo se a partida acabar.
     for (const player of this.players.values()) player.subornedBy = null;
     this.bribedPlayerId = null;
     this.bankerId = null;
+    if (tied) {
+      this.beginNight();
+      return;
+    }
     const result = this.checkGameOver();
     if (result) return result;
     if (!this.ended) this.beginNight();

@@ -29,9 +29,10 @@ function installSocketHandlers(io) {
     const room = activeRooms[game.roomCode];
     if (!room) return;
     room.gameState = game.phase;
+    room.lastActivityAt = Date.now();
     room.hostId = [...game.players.values()].find((p) => p.host)?.id || '';
     room.players = [...game.players.values()].map((p) => ({
-      id: p.id, name: p.name, isReady: Boolean(p.isReady), isAlive: Boolean(p.alive),
+      id: p.id, name: p.name, connected: Boolean(p.connected), isReady: Boolean(p.isReady), isAlive: Boolean(p.alive),
       role: p.role || '', isHost: Boolean(p.host), subornedBy: p.subornedBy || null,
       isSilenced: Boolean(p.isSilenced), isMechanized: Boolean(p.isMechanized),
       bronzeCharges: p.bronzeCharges, isAlerted: Boolean(p.isAlerted)
@@ -82,6 +83,7 @@ function installSocketHandlers(io) {
   function emitChat(game, entry) {
     const room = activeRooms[game.roomCode];
     if (!room) return;
+    room.lastActivityAt = Date.now();
     room.chatHistory.push(entry);
     if (room.chatHistory.length > 100) room.chatHistory.splice(0, room.chatHistory.length - 100);
     const payload = { sender: entry.sender, text: entry.text, type: entry.type, at: entry.at, private: Boolean(entry.private) };
@@ -103,6 +105,7 @@ function installSocketHandlers(io) {
   function emitLobbyMessage(game, { sender, text, type = 'player' }) {
     const room = activeRooms[game.roomCode];
     if (!room) return;
+    room.lastActivityAt = Date.now();
     room.lobbyChatHistory ||= [];
     const entry = { sender, text, type, at: Date.now() };
     room.lobbyChatHistory.push(entry);
@@ -156,6 +159,7 @@ function installSocketHandlers(io) {
 
     game.addLog(`${player.name} saiu da oficina.`, 'system');
     game.removePlayer(socket.id);
+    if (activeRooms[roomCode]) activeRooms[roomCode].lastDisconnectedAt = Date.now();
 
     if (game.players.size === 0) {
       game.dispose();
@@ -181,6 +185,7 @@ function installSocketHandlers(io) {
         const code = makeRoomCode();
         const debugMode = isDebug === true || String(name || '').trim().toLocaleLowerCase('pt') === 'yokki_qa';
         const game = new Game(code, emitRoom, { isDebug: debugMode });
+        game.onSystemMessage = (text) => systemMessage(game, text);
         game.onPrivate = (playerId, payload) => {
           io.to(playerId).emit('privateEvent', payload);
           if (payload.type === 'voteConfiscated') {
@@ -194,7 +199,11 @@ function installSocketHandlers(io) {
           }
         };
         games.set(code, game);
-        activeRooms[code] = { code, gameState: 'LOBBY', hostId: '', players: [], chatHistory: [], lobbyChatHistory: [], isDebug: debugMode };
+        const now = Date.now();
+        activeRooms[code] = {
+          code, gameState: 'LOBBY', hostId: '', players: [], chatHistory: [], lobbyChatHistory: [],
+          isDebug: debugMode, createdAt: now, lastActivityAt: now, lastDisconnectedAt: null
+        };
         const player = registerPlayer(socket, game, name);
         // Confirmação explícita usada pelo cliente para abrir o lobby.
         socket.emit('roomCreated', { roomCode: code, playerId: player.id });
