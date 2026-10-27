@@ -170,7 +170,6 @@
     $('roomInput').value = '';
     $('chatMessages').innerHTML = '<div class="chat-empty">As ondas estão em silêncio.<br>Envia a primeira mensagem.</div>';
     $('lobby-chat-messages').innerHTML = '<div class="lobby-chat-empty">A oficina está em silêncio.<br>Inicia a conversa com a tripulação.</div>';
-    $('eventLog').innerHTML = '';
     $('playersList').innerHTML = '';
     $('lobbyPlayers').innerHTML = '';
     $('actionArea').innerHTML = '';
@@ -253,9 +252,9 @@
     $('ammoInfo').classList.toggle('hidden', me.role !== 'INVENTOR');
     $('ammoInfo').textContent = `MUNIÇÃO · ${me.bullets ?? 0} DISPARO(S)`;
     $('aliveCount').textContent = String(state.players.filter(p=>p.alive).length).padStart(2,'0');
-    $('syndicateBox').classList.toggle('hidden', !['SABOTEUR','SMOKE','INDUSTRIAL_SPY','PATENT_FORGER'].includes(me.role));
+    $('syndicateBox').classList.toggle('hidden', !['SABOTEUR','SMOKE','INDUSTRIAL_SPY','PATENT_FORGER','ETHER_SMUGGLER','CLANDESTINE_INFORMANT','COPPER_BANKER'].includes(me.role));
     $('syndicateList').innerHTML = (state.syndicate||[]).map(p=>`<div class="syndicate-member">⚙ ${escapeHtml(p.name)}${p.id===playerId?' · tu':''}</div>`).join('');
-    renderPlayers(); renderActions(); renderLog();
+    renderPlayers(); renderActions();
   }
   function renderPlayers() {
     $('playersList').innerHTML = state.players.map((p) => {
@@ -264,12 +263,17 @@
       const nightAction = state.phase === 'NIGHT' && canTarget ? quickNightAction(state.me?.role) : null;
       const canVote = state.phase === 'VOTING' && p.alive && !self && !state.me?.bribeVoteLocked;
       const canShoot = ['DAY','VOTING'].includes(state.phase) && state.me?.role === 'INVENTOR' && state.me?.bullets > 0 && p.alive && !self;
+      const syndicateVoter = ['SMOKE','INDUSTRIAL_SPY','PATENT_FORGER','ETHER_SMUGGLER','CLANDESTINE_INFORMANT','COPPER_BANKER'].includes(state.me?.role);
+      const syndicateIds = (state.syndicate || []).map(member => member.id);
+      const canVoteSyndicateAttack = state.phase === 'NIGHT' && syndicateVoter && p.alive && !self && !syndicateIds.includes(p.id);
       const votes = state.voteCounts?.[p.id] || 0;
-      const controls = `${nightAction?`<button class="card-action night-action" data-card-action="${nightAction.event}" ${nightAction.action?`data-action="${nightAction.action}"`:''} data-target-id="${escapeHtml(p.id)}" aria-label="${nightAction.label} ${escapeHtml(p.name)}"><span>${nightAction.icon}</span>${nightAction.label}</button>`:''}${canVote?`<button class="card-action vote-action" data-vote-target="${escapeHtml(p.id)}" aria-label="Votar em ${escapeHtml(p.name)}">⚒ Votar</button>`:''}${canShoot?`<button class="card-action shoot-action" data-shoot-target="${escapeHtml(p.id)}" aria-label="Disparar contra ${escapeHtml(p.name)}">⌖ Disparar</button>`:''}`;
+      const showNightButton = nightAction && state.me?.role !== 'SABOTEUR';
+      const controls = `${showNightButton?`<button class="card-action night-action" data-card-action="${nightAction.event}" ${nightAction.action?`data-action="${nightAction.action}"`:''} data-target-id="${escapeHtml(p.id)}" aria-label="${nightAction.label} ${escapeHtml(p.name)}"><span>${nightAction.icon}</span>${nightAction.label}</button>`:''}${canVote?`<button class="card-action vote-action" data-vote-target="${escapeHtml(p.id)}" aria-label="Votar em ${escapeHtml(p.name)}">⚒ Votar</button>`:''}${canShoot?`<button class="card-action shoot-action" data-shoot-target="${escapeHtml(p.id)}" aria-label="Disparar contra ${escapeHtml(p.name)}">⌖ Disparar</button>`:''}`;
       const badge = state.phase === 'VOTING' ? `<span class="vote-count" aria-label="${votes} voto(s)">⚙ ${votes}</span>` : '';
       const bribedClass = self && state.me?.bribeVoteControlled ? 'bribed-vote' : '';
       const bribeBadge = self && state.me?.bribeVoteLocked ? '<span class="bribe-badge" title="O teu voto foi confiscado">🪙 VOTO HERDADO</span>' : '';
-      return `<div class="player-row ${p.alive?'':'dead'} ${selected?'selected':''} ${state.phase==='VOTING'?'voting-card':''} ${bribedClass}">${badge}<div class="player-avatar">${p.alive?'⚙':'†'}</div><span class="player-name">${escapeHtml(p.name)}${self?' (tu)':''}</span>${bribeBadge}${role?`<span class="player-role">${escapeHtml(role)}</span>`:`<span class="player-state ${p.alive?'alive':'dead'}">${p.alive?'VIVO':'[DESTRUÍDO]'}</span>`}${controls}</div>`;
+      const directSyndicateTarget = canVoteSyndicateAttack || (state.phase === 'NIGHT' && state.me?.role === 'SABOTEUR' && canTarget);
+      return `<div class="player-row ${p.alive?'':'dead'} ${selected?'selected':''} ${state.phase==='VOTING'?'voting-card':''} ${bribedClass} ${directSyndicateTarget?'direct-target':''}" ${directSyndicateTarget?`data-player-target="${escapeHtml(p.id)}"`:''}>${badge}<div class="player-avatar">${p.alive?'⚙':'†'}</div><span class="player-name">${escapeHtml(p.name)}${self?' (tu)':''}</span>${bribeBadge}${role?`<span class="player-role">${escapeHtml(role)}</span>`:`<span class="player-state ${p.alive?'alive':'dead'}">${p.alive?'VIVO':'[DESTRUÍDO]'}</span>`}${directSyndicateTarget?'<span class="direct-target-hint">ALVO · CLICAR</span>':''}${controls}</div>`;
     }).join('');
   }
   function quickNightAction(role) {
@@ -283,6 +287,7 @@
       CLANDESTINE_INFORMANT:{event:'playerAction',action:'silence',icon:'⊘',label:'Silenciar'},
       INDUSTRIAL_SPY:{event:'nightAction_Spy',icon:'◉',label:'Identificar cargo'},
       MAINTENANCE_MECHANIC:{event:'nightAction_Revive',icon:'✚',label:'Reparar'},
+      COPPER_BANKER:{event:'nightAction_Bribe',icon:'🪙',label:'Subornar'},
       AUTOMATON:{event:'nightAction_Kill',icon:'⌖',label:'Eliminar'}
       ,SOUL_COLLECTOR:{event:'nightAction_Mechanize',icon:'⚙',label:'Mecanizar'}
     })[role] || null;
@@ -304,6 +309,10 @@
     const area = $('actionArea');
     const role = state.me?.role, phase = state.phase;
     const canShoot = role === 'INVENTOR' && ['DAY','VOTING'].includes(phase) && state.me.bullets > 0;
+    if (phase === 'NIGHT' && role === 'SABOTEUR') {
+      area.innerHTML = '<div class="action-prompt">SINDICATO REBELDE · CLICA NUM HABITANTE VIVO PARA DEFINIR O ATAQUE.</div>';
+      return;
+    }
     if (phase === 'NIGHT' && role === 'BRONZE_SMITH') {
       const submitted=state.me.actionSubmitted, charges=state.me.bronzeCharges||0, alerted=Boolean(state.me.isAlerted);
       const buttonText=alerted?'🔒 OFICINA TRANCADA · ALERTA MÁXIMO':`🔥 Ativar Fornalha de Pressão (Cargas: ${charges}/2)`;
@@ -320,13 +329,12 @@
     }
     if (phase === 'NIGHT' && role === 'ETHER_SMUGGLER') {
       const submitted=state.me.actionSubmitted, options=state.players.filter(p=>p.alive&&p.id!==playerId).map(p=>`<option value="${escapeHtml(p.id)}">${escapeHtml(p.name)}</option>`).join('');
-      area.innerHTML=`<div class="action-prompt">CONTRABANDISTA DE ÉTER · TROCA DUAS IDENTIDADES DE INSPEÇÃO</div><div class="action-row"><select id="swapFirst" class="action-select"><option value="">Primeira identidade…</option>${options}</select><select id="swapSecond" class="action-select"><option value="">Segunda identidade…</option>${options}</select><button id="swapSubmit" class="button action-button" ${submitted?'disabled':''}>TROCAR IDENTIDADES ↗</button></div>${renderSyndicateVote()}`;
+      area.innerHTML=`<div class="action-prompt">CONTRABANDISTA DE ÉTER · TROCA DUAS IDENTIDADES DE INSPEÇÃO</div><div class="action-row"><select id="swapFirst" class="action-select"><option value="">Primeira identidade…</option>${options}</select><select id="swapSecond" class="action-select"><option value="">Segunda identidade…</option>${options}</select><button id="swapSubmit" class="button action-button" ${submitted?'disabled':''}>TROCAR IDENTIDADES ↗</button></div>`;
       $('swapSubmit').onclick=()=>{const targetId=$('swapFirst').value,secondTargetId=$('swapSecond').value;if(!targetId||!secondTargetId||targetId===secondTargetId)return showToast('Escolhe duas pessoas diferentes.');socket.emit('playerAction',{action:'swapInspection',targetId,secondTargetId});};
-      bindSyndicateVote(); return;
+      return;
     }
     if (phase === 'NIGHT' && role === 'PATENT_FORGER') {
-      area.innerHTML = `<div class="action-prompt">A TUA PATENTE FALSIFICADA FAZ-TE PARECER DA ALIANÇA</div>${renderSyndicateVote()}`;
-      bindSyndicateVote();
+      area.innerHTML = '<div class="action-prompt">FALSIFICADOR DE PATENTES · CLICA NUM HABITANTE VIVO PARA APOIAR O ATAQUE DO SINDICATO.</div>';
       return;
     }
     if (phase === 'NIGHT' && role === 'REVERSE_ENGINEER') {
@@ -395,15 +403,13 @@
         ,PRESSURE_TRAPPER:'trap', CLANDESTINE_INFORMANT:'silence', COPPER_BANKER:'bribe', SOUL_COLLECTOR:'mechanize'
       }[role];
       const options = state.players.filter(p=>targetable(p));
-      const syndicateVote = ['SMOKE','INDUSTRIAL_SPY','CLANDESTINE_INFORMANT','COPPER_BANKER'].includes(role) ? renderSyndicateVote() : '';
-      area.innerHTML = `<div class="action-prompt">${labels[role]}</div><div class="action-row"><select id="targetSelect" class="action-select" ${revivalUsed?'disabled':''}><option value="">Seleciona um habitante…</option>${options.map(p=>`<option value="${escapeHtml(p.id)}" ${selectedTarget===p.id?'selected':''}>${escapeHtml(p.name)}</option>`).join('')}</select><button id="actionSubmit" class="button action-button" ${submitted||revivalUsed?'disabled':''}>${submitted?'AÇÃO CONFIRMADA':revivalUsed?'JÁ UTILIZADA':'CONFIRMAR AÇÃO'} ↗</button></div>${syndicateVote}`;
+      area.innerHTML = `<div class="action-prompt">${labels[role]}</div><div class="action-row"><select id="targetSelect" class="action-select" ${revivalUsed?'disabled':''}><option value="">Seleciona um habitante…</option>${options.map(p=>`<option value="${escapeHtml(p.id)}" ${selectedTarget===p.id?'selected':''}>${escapeHtml(p.name)}</option>`).join('')}</select><button id="actionSubmit" class="button action-button" ${submitted||revivalUsed?'disabled':''}>${submitted?'AÇÃO CONFIRMADA':revivalUsed?'JÁ UTILIZADA':'CONFIRMAR AÇÃO'} ↗</button></div>`;
       $('actionSubmit').onclick = () => {
         const targetId = $('targetSelect').value;
         if (!targetId) return showToast('Seleciona um habitante primeiro.');
         if(role==='SOUL_COLLECTOR') socket.emit('nightAction_Mechanize',{targetId});
         else socket.emit('playerAction',{action,targetId});
       };
-      if (syndicateVote) bindSyndicateVote();
     } else if (phase === 'VOTING') {
       const options = state.players.filter(p=>p.alive && p.id!==playerId);
       const controlled=Boolean(state.me.bribeVoteControlled), locked=Boolean(state.me.bribeVoteLocked);
@@ -416,24 +422,10 @@
     } else if (phase === 'DAY') area.innerHTML='<div class="action-prompt">A DISCUSSÃO ESTÁ ABERTA · A VOTAÇÃO COMEÇA NO FIM DO TEMPO</div>';
     else area.innerHTML='';
   }
-  function renderSyndicateVote() {
-    const options = state.players.filter(p=>p.alive && !(state.syndicate||[]).some(member=>member.id===p.id));
-    return `<div class="action-prompt" style="margin-top:13px">VOTO DO SINDICATO · ESCOLHE O ALVO DO ATAQUE</div><div class="action-row"><select id="syndicateVoteSelect" class="action-select"><option value="">Vota num alvo…</option>${options.map(p=>`<option value="${escapeHtml(p.id)}">${escapeHtml(p.name)}</option>`).join('')}</select><button id="syndicateVoteSubmit" class="button vote-button">${state.me.syndicateVoted?'ALTERAR VOTO':'VOTAR NO ALVO'} ↗</button></div>`;
-  }
-  function bindSyndicateVote() {
-    $('syndicateVoteSubmit').onclick = () => {
-      const targetId = $('syndicateVoteSelect').value;
-      if (!targetId) return showToast('Seleciona o alvo do Sindicato.');
-      socket.emit('syndicateVote', { targetId });
-    };
-  }
   function shootSelected() {
     const id = $('shootSelect')?.value || $('voteSelect')?.value;
     if (!id) return showToast('Seleciona um alvo primeiro.');
     socket.emit('playerAction',{action:'shoot',targetId:id});
-  }
-  function renderLog() {
-    $('eventLog').innerHTML = state.log.slice().reverse().map(e=>`<div class="log-entry ${e.type}"><span class="log-time">${new Date(e.at).toLocaleTimeString('pt-PT',{hour:'2-digit',minute:'2-digit'})}</span>${escapeHtml(e.message)}</div>`).join('');
   }
   function renderGameOver() {
     const winner = gameOverPayload?.winnerFaction || state.winnerFaction || state.winner;
@@ -485,8 +477,6 @@
   document.addEventListener('click', event => {
     if (event.target.closest('button') && !event.target.closest('#audioToggle')) audioManager.playSFX('click');
   }, true);
-  $('clearLog').onclick=()=>{$('eventLog').innerHTML='';};
-  $('playersList').addEventListener('click',e=>{const id=e.target.closest('[data-target]')?.dataset.target;if(id){selectedTarget=id;renderPlayers();renderActions();}});
   $('playersList').addEventListener('click',e=>{
     const action=e.target.closest('[data-card-action]');
     if(action){socket.emit(action.dataset.cardAction,action.dataset.action?{action:action.dataset.action,targetId:action.dataset.targetId}:{targetId:action.dataset.targetId});return;}
@@ -494,6 +484,12 @@
     if(vote){socket.emit('submitVote',{targetId:vote.dataset.voteTarget});return;}
     const shot=e.target.closest('[data-shoot-target]');
     if(shot){socket.emit('playerAction',{action:'shoot',targetId:shot.dataset.shootTarget});}
+    const directTarget=e.target.closest('[data-player-target]');
+    if(directTarget){
+      const targetId=directTarget.dataset.playerTarget;
+      if(state.me?.role==='SABOTEUR') socket.emit('nightAction_Kill',{targetId});
+      else socket.emit('syndicateVote',{targetId});
+    }
   });
   $('chatForm').onsubmit=e=>{e.preventDefault();const input=$('chatInput');if(input.value.trim()){socket.emit('sendMessage',{roomCode,message:input.value.trim()});input.value='';}};
   function sendLobbyMessage() {

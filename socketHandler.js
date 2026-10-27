@@ -33,7 +33,8 @@ function installSocketHandlers(io) {
     room.players = [...game.players.values()].map((p) => ({
       id: p.id, name: p.name, isReady: Boolean(p.isReady), isAlive: Boolean(p.alive),
       role: p.role || '', isHost: Boolean(p.host), subornedBy: p.subornedBy || null,
-      isMechanized: Boolean(p.isMechanized), bronzeCharges: p.bronzeCharges, isAlerted: Boolean(p.isAlerted)
+      isSilenced: Boolean(p.isSilenced), isMechanized: Boolean(p.isMechanized),
+      bronzeCharges: p.bronzeCharges, isAlerted: Boolean(p.isAlerted)
     }));
   }
 

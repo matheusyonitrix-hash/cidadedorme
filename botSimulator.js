@@ -133,8 +133,48 @@ function maybePerformQaNightAction(bot, gameState = bot.state) {
 
   const actorRole = bot.role || gameState.me.role;
   const players = gameState.players || [];
-  const host = players.find((player) => player.host);
+  const livingPlayers = players.filter((player) => player.alive !== false && player.id !== bot.playerId);
+  const host = players.find((player) => player.host && player.alive !== false);
 
+  // Mecânicas gerais: os dados públicos mantêm a identidade dos vivos secreta,
+  // pelo que o simulador escolhe qualquer alvo vivo fora da sua própria ficha.
+  if (actorRole === 'SOUL_COLLECTOR' || /colecionador de almas mecânicas/i.test(bot.roleName || '')) {
+    const targets = livingPlayers.filter((player) => player.isMechanized !== true);
+    const target = randomItem(targets);
+    if (!target) return;
+    bot.lastNightActionDay = night;
+    bot.socket.emit('nightAction_Mechanize', { targetId: target.id });
+    debugLog(`⚙️ [DEBUG] ${bot.name} (Colecionador de Almas Mecânicas) mecanizou ${target.name}.`);
+    return;
+  }
+
+  if (actorRole === 'COPPER_BANKER' || /banqueiro de cobre/i.test(bot.roleName || '')) {
+    // O servidor só revela a equipa aos membros do Sindicato. Excluímos os
+    // companheiros conhecidos e escolhemos aleatoriamente entre os restantes.
+    const syndicateIds = new Set((gameState.syndicate || []).map((player) => player.id));
+    const candidates = livingPlayers.filter((player) => !syndicateIds.has(player.id));
+    const target = randomItem(candidates);
+    if (!target) return;
+    bot.lastNightActionDay = night;
+    bot.socket.emit('nightAction_Bribe', { targetId: target.id });
+    debugLog(`🪙 [DEBUG] ${bot.name} (Banqueiro de Cobre) subornou ${target.name}.`);
+    return;
+  }
+
+  if (actorRole === 'SABOTEUR' || /sabotador/i.test(bot.roleName || '')) {
+    const syndicateIds = new Set((gameState.syndicate || []).map((player) => player.id));
+    const targets = livingPlayers.filter((player) => !syndicateIds.has(player.id));
+    const target = (bot.name === 'Mecânico_Bot_2' && host && !syndicateIds.has(host.id))
+      ? host
+      : randomItem(targets);
+    if (!target) return;
+    bot.lastNightActionDay = night;
+    bot.socket.emit('nightAction_Kill', { targetId: target.id });
+    debugLog(`⚔️ [DEBUG] ${bot.name} (Sabotador) escolheu ${target.name} para o ataque do Sindicato.`);
+    return;
+  }
+
+  // Cenários QA determinísticos existentes para verificar óleo e proteção.
   if (bot.name === 'Mecânico_Bot_1' && actorRole === 'MAD_SCIENTIST') {
     if (night === 3) {
       bot.lastNightActionDay = night;
@@ -154,17 +194,6 @@ function maybePerformQaNightAction(bot, gameState = bot.state) {
       debugLog(`🛢️ [QA-MODE] ${bot.name} bombeou óleo em ${targetName} na Noite ${night}.`);
       return;
     }
-  }
-
-  if (bot.name === 'Mecânico_Bot_2' && actorRole === 'SABOTEUR') {
-    const target = host?.alive && host.id !== bot.playerId
-      ? host
-      : players.find((player) => player.alive && player.id !== bot.playerId);
-    if (!target) return;
-    bot.lastNightActionDay = night;
-    bot.socket.emit('nightAction_Kill', { targetId: target.id });
-    debugLog(`⚔️ [QA-MODE] ${bot.name} (Sabotador) atacou ${target.name} na Noite ${night}.`);
-    return;
   }
 
   // O Bot 3 protege o anfitrião, que também é o alvo prioritário do Sabotador.
@@ -191,23 +220,43 @@ function scheduleDayChat(bot, currentDay) {
   }, delay);
 }
 
-function maybeVote(bot, gameState) {
+function scheduleVote(bot, gameState) {
   const me = gameState.me;
   if (gameState.phase !== 'VOTING' || !me?.alive) return;
 
   // gameState é retransmitido após várias ações. Vota apenas uma vez por dia.
   const votingDay = Number(gameState.day) || 0;
-  if (bot.lastVotedDay === votingDay) return;
+  if (bot.lastVotedDay === votingDay || me.voted || bot.voteTimer) return;
+
+  // O motor aplica o voto herdado automaticamente assim que o Banqueiro vota.
+  // Se ainda está à espera, não enviamos um voto concorrente.
+  if (me.bribeVoteControlled && !me.bribeVoteLocked) return;
 
   const livingTargets = (gameState.players || []).filter((player) =>
-    player.alive && player.id !== me.id
+    player.alive !== false && player.id !== me.id
   );
   if (livingTargets.length === 0) return;
 
   const target = randomItem(livingTargets);
-  bot.lastVotedDay = votingDay;
-  bot.pendingVote = { day: votingDay, targetId: target.id, targetName: target.name };
-  bot.socket.emit('submitVote', { targetId: target.id });
+  const delay = 3000 + Math.floor(Math.random() * 2001);
+  bot.voteTimer = setTimeout(() => {
+    bot.voteTimer = null;
+    const currentState = bot.state;
+    if (shuttingDown || currentState?.phase !== 'VOTING' || !currentState.me?.alive) return;
+    if ((Number(currentState.day) || 0) !== votingDay || currentState.me.voted) return;
+    if (currentState.me.bribeVoteControlled && !currentState.me.bribeVoteLocked) return;
+
+    // Revalida o alvo após o atraso, pois uma eliminação pode ter ocorrido.
+    const stillLiving = (currentState.players || []).filter((player) =>
+      player.alive !== false && player.id !== currentState.me.id
+    );
+    const selected = stillLiving.find((player) => player.id === target.id) || randomItem(stillLiving);
+    if (!selected) return;
+
+    bot.lastVotedDay = votingDay;
+    bot.pendingVote = { day: votingDay, targetId: selected.id, targetName: selected.name };
+    bot.socket.emit('submitVote', { targetId: selected.id });
+  }, delay);
 }
 
 function createBot(index) {
@@ -223,6 +272,7 @@ function createBot(index) {
     socket,
     state: null,
     chatTimer: null,
+    voteTimer: null,
     lastVotedDay: null,
     votedLogDay: null,
     pendingVote: null,
@@ -259,7 +309,11 @@ function createBot(index) {
       clearTimeout(bot.chatTimer);
       bot.chatTimer = null;
     }
-    maybeVote(bot, gameState);
+    if (gameState.phase !== 'VOTING' && bot.voteTimer) {
+      clearTimeout(bot.voteTimer);
+      bot.voteTimer = null;
+    }
+    scheduleVote(bot, gameState);
     maybePerformQaNightAction(bot, gameState);
 
     if (gameState.phase === 'VOTING' && gameState.me?.voted && bot.pendingVote) {
@@ -335,7 +389,9 @@ function createBot(index) {
 
   socket.on('disconnect', (reason) => {
     if (bot.chatTimer) clearTimeout(bot.chatTimer);
+    if (bot.voteTimer) clearTimeout(bot.voteTimer);
     bot.chatTimer = null;
+    bot.voteTimer = null;
     log(name, `desligado (${reason}).`);
   });
 
@@ -349,6 +405,7 @@ function shutdown(signal) {
 
   for (const bot of botRecords) {
     if (bot.chatTimer) clearTimeout(bot.chatTimer);
+    if (bot.voteTimer) clearTimeout(bot.voteTimer);
   }
   for (const socket of sockets) {
     socket.disconnect();
