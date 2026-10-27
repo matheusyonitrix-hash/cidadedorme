@@ -56,6 +56,15 @@ const playerSchema = new Schema(
     },
     unlocked_cosmetics: { type: [String], default: [] },
     equipped_cosmetic: { type: String, default: null },
+    match_history: {
+      type: [{
+        role: { type: String, required: true },
+        isVictory: { type: Boolean, required: true },
+        xpGained: { type: Number, required: true, min: 0 },
+        date: { type: Date, default: Date.now }
+      }],
+      default: []
+    },
     stats: {
       games_played: { type: Number, default: 0, min: 0 },
       victories: { type: Number, default: 0, min: 0 },
@@ -120,52 +129,53 @@ playerSchema.statics.saveMatchResult = async function saveMatchResult(
     throw new TypeError(`Classe inválida: ${role}`);
   }
 
-  const previousXp = { $ifNull: ['$xp', 0] };
-  const nextXp = { $add: [previousXp, xpGained] };
   const rolePlayedPath = `roles_stats.${roleKey}.played`;
   const roleWonPath = `roles_stats.${roleKey}.won`;
   const increments = {
-    xp: nextXp,
-    level: {
-      $max: [
-        1,
-        {
-          $floor: {
-            $divide: [
-              { $add: [1, { $sqrt: { $add: [1, { $divide: [{ $multiply: [8, nextXp] }, XP_PER_FIRST_LEVEL] }] } }] },
-              2
-            ]
-          }
-        }
-      ]
-    },
-    'currencies.copper_coins': {
-      $add: [{ $ifNull: ['$currencies.copper_coins', 0] }, coinsGained]
-    },
-    'stats.games_played': { $add: [{ $ifNull: ['$stats.games_played', 0] }, 1] },
-    'stats.victories': {
-      $add: [{ $ifNull: ['$stats.victories', 0] }, isVictory ? 1 : 0]
-    },
-    'stats.defeats': {
-      $add: [{ $ifNull: ['$stats.defeats', 0] }, isVictory ? 0 : 1]
-    },
-    [rolePlayedPath]: { $add: [{ $ifNull: [`$${rolePlayedPath}`, 0] }, 1] }
+    xp: xpGained,
+    'currencies.copper_coins': coinsGained,
+    'stats.games_played': 1,
+    'stats.victories': isVictory ? 1 : 0,
+    'stats.defeats': isVictory ? 0 : 1,
+    [rolePlayedPath]: 1
   };
+  if (isVictory) increments[roleWonPath] = 1;
 
-  if (isVictory) {
-    increments[roleWonPath] = { $add: [{ $ifNull: [`$${roleWonPath}`, 0] }, 1] };
-  }
-
+  // XP, estatísticas e histórico entram juntos numa única atualização. O
+  // push mantém apenas os dez resultados mais recentes; o cliente mostra-os
+  // em ordem decrescente de data.
   const player = await this.findOneAndUpdate(
     { username: username.trim() },
-    [{ $set: increments }],
+    {
+      $inc: increments,
+      $push: {
+        match_history: {
+          $each: [{ role: ROLE_INFO[roleKey].name, isVictory, xpGained, date: new Date() }],
+          $slice: -10
+        }
+      }
+    },
     { new: true, runValidators: true }
   );
 
   if (!player) {
     throw new Error(`Não existe jogador com o username "${username.trim()}".`);
   }
-  return player;
+
+  // Operadores de atualização comuns ($inc/$push) não podem ser misturados
+  // com um pipeline no mesmo findOneAndUpdate. Recalculamos o nível em outra
+  // operação atómica, sempre a partir do XP corrente no documento.
+  const currentXp = { $ifNull: ['$xp', 0] };
+  await this.updateOne(
+    { _id: player._id },
+    [{ $set: { level: {
+      $max: [1, { $floor: { $divide: [
+        { $add: [1, { $sqrt: { $add: [1, { $divide: [{ $multiply: [8, currentXp] }, XP_PER_FIRST_LEVEL] }] } }] },
+        2
+      ] } }]
+    } } }]
+  );
+  return this.findById(player._id);
 };
 
 const Player = mongoose.models.Player || mongoose.model('Player', playerSchema);

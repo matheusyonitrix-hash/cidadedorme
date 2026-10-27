@@ -43,6 +43,7 @@ function accountPayload(player) {
     },
     unlocked_cosmetics: player.unlocked_cosmetics || [],
     equipped_cosmetic: player.equipped_cosmetic || null,
+    match_history: player.match_history || [],
     stats: {
       games_played: player.stats?.games_played || 0,
       victories: player.stats?.victories || 0,

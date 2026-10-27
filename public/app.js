@@ -156,6 +156,8 @@
     $('accountProgress').classList.remove('hidden');
     $('accountProgressLabel').textContent = `${profile.username} · NÍVEL ${progress.level} · XP ${progress.xpIntoLevel}/${progress.xpRequired} · ${coins} COBRE`;
     $('accountXpBar').style.width = `${progress.percent}%`;
+    $('openHistoryInGame').classList.remove('hidden');
+    renderMatchHistory(profile.match_history || []);
     $('openBazarInGame').classList.remove('hidden');
     renderBazar();
     $('accountWelcome').textContent = `Bem-vindo, ${profile.username}. O teu progresso está guardado na caldeira.`;
@@ -207,6 +209,26 @@
   function closeBazar() {
     $('bazar-modal').classList.remove('active');
     $('bazar-modal').setAttribute('aria-hidden', 'true');
+  }
+  function renderMatchHistory(history = []) {
+    const recentMatches = Array.isArray(history) ? [...history].slice(-10).reverse() : [];
+    $('historyEmpty').classList.toggle('hidden', recentMatches.length > 0);
+    $('historyItems').innerHTML = recentMatches.map(match => {
+      const role = roleNames[match.role] || match.role || 'Classe desconhecida';
+      const parsedDate = new Date(match.date);
+      const date = Number.isNaN(parsedDate.getTime()) ? 'Data indisponível' : parsedDate.toLocaleString('pt-PT', { dateStyle: 'medium', timeStyle: 'short' });
+      return `<article class="history-row"><div class="history-role"><span class="section-kicker">${escapeHtml(role)}</span><time>${escapeHtml(date)}</time></div><span class="history-xp">+${Math.max(0, Number(match.xpGained) || 0)} XP</span><strong class="history-result ${match.isVictory ? 'victory' : 'defeat'}">${match.isVictory ? 'VITÓRIA' : 'DERROTA'}</strong></article>`;
+    }).join('');
+  }
+  function openHistory() {
+    if (!accountProfile) return showToast('Inicia sessão para consultar os teus registos.');
+    renderMatchHistory(accountProfile.match_history || []);
+    $('history-modal').classList.add('active');
+    $('history-modal').setAttribute('aria-hidden', 'false');
+  }
+  function closeHistory() {
+    $('history-modal').classList.remove('active');
+    $('history-modal').setAttribute('aria-hidden', 'true');
   }
   const classesModal = $('classes-modal');
   const classesOpenButton = $('classes-manual-open');
@@ -576,6 +598,7 @@
     matchProgress = null;
     $('accountProgress').classList.add('hidden');
     $('openBazarInGame').classList.add('hidden');
+    $('openHistoryInGame').classList.add('hidden');
     $('accountActions').classList.add('hidden');
     $('accountForm').classList.remove('hidden');
     $('accountUsername').value = '';
@@ -585,6 +608,10 @@
   });
   $('openBazar').addEventListener('click', openBazar);
   $('openBazarInGame').addEventListener('click', openBazar);
+  $('openHistory').addEventListener('click', openHistory);
+  $('openHistoryInGame').addEventListener('click', openHistory);
+  $('closeHistory').addEventListener('click', closeHistory);
+  $('history-modal').addEventListener('click', event => { if (event.target === $('history-modal')) closeHistory(); });
   $('closeBazar').addEventListener('click', closeBazar);
   $('bazar-modal').addEventListener('click', event => { if (event.target === $('bazar-modal')) closeBazar(); });
   $('bazarItems').addEventListener('click', event => {

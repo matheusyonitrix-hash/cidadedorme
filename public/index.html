@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20261027-2">
+  <link rel="stylesheet" href="style.css?v=20261027-3">
 </head>
 <body>
   <main id="landing" class="landing">
@@ -31,6 +31,7 @@
         <div id="accountActions" class="hidden">
           <div class="section-kicker auth-kicker">CALDEIRA AUTENTICADA</div>
           <p id="accountWelcome" class="account-welcome"></p>
+          <button id="openHistory" class="manual-open history-open" type="button">📜 Ver Registos de Voo</button>
           <button id="openBazar" class="button button-secondary bazar-open" type="button">🏪 Bazar a Vapor</button>
           <button id="createRoom" class="button button-primary">⚙ Entrar numa Oficina <span>↗</span></button>
           <div class="divider"><span></span> ou entra numa oficina privada <span></span></div>
@@ -137,6 +138,7 @@
     </section>
     <div id="toast" class="toast hidden"></div>
   </main>
+  <button id="openHistoryInGame" class="manual-open history-header-open hidden" type="button">📜 Registos de Voo</button>
   <button id="openBazarInGame" class="manual-open bazar-header-open hidden" type="button">🏪 Bazar a Vapor</button>
   <section id="bazar-modal" class="bazar-modal" role="dialog" aria-modal="true" aria-labelledby="bazar-title" aria-hidden="true">
     <div class="bazar-dialog">
@@ -145,6 +147,13 @@
       <p id="bazarFeedback" class="bazar-feedback" aria-live="polite">As aquisições ficam guardadas na tua conta.</p>
     </div>
   </section>
-  <script src="/socket.io/socket.io.js"></script><script src="/app.js?v=20261027-2"></script>
+  <section id="history-modal" class="history-modal" role="dialog" aria-modal="true" aria-labelledby="history-title" aria-hidden="true">
+    <div class="history-dialog">
+      <header class="history-heading"><div><div class="section-kicker">ARQUIVO DE CAMPANHAS · DISTRITO DA FULIGEM</div><h2 id="history-title">Registos de Voo</h2><p>As dez partidas mais recentes da tua conta.</p></div><button id="closeHistory" class="bazar-close" type="button" aria-label="Fechar histórico">×</button></header>
+      <div id="historyItems" class="history-items"></div>
+      <p id="historyEmpty" class="history-empty hidden">Nenhum registo encontrado nas caldeiras da cidade.</p>
+    </div>
+  </section>
+  <script src="/socket.io/socket.io.js"></script><script src="/app.js?v=20261027-3"></script>
 </body>
 </html>
