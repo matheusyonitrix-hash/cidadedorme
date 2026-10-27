@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20261027-6">
+  <link rel="stylesheet" href="style.css?v=20261027-11">
 </head>
 <body>
   <main id="landing" class="landing">
@@ -64,8 +64,8 @@
         <div class="role-card"><div class="section-kicker">A TUA IDENTIDADE</div><div class="role-stamp">⚙</div><h3 id="roleName">—</h3><span id="roleFaction" class="faction-tag">—</span><p id="roleDescription">—</p><div id="ammoInfo" class="ammo hidden"></div></div>
         <div id="syndicateBox" class="syndicate-box hidden"><div class="section-kicker">A TUA TRIPULAÇÃO</div><div id="syndicateList"></div></div>
       </aside>
-      <section class="center-column"><div class="player-panel"><div class="panel-heading"><div><div class="section-kicker">DISTRITO DA FULIGEM</div><h2>Habitantes <span id="aliveCount">00</span></h2></div><div class="live-label"><i></i> AO VIVO</div></div><div id="playersList" class="players-list"></div><div id="actionArea" class="action-area"></div></div></section>
-      <aside class="right-column"><div class="chat-panel"><div class="chat-heading"><div><div class="section-kicker">TRANSMISSÃO</div><h3>Frequência</h3></div><span id="chatScope" class="chat-scope">DISTRITO</span></div><div id="chatMessages" class="chat-messages"><div class="chat-empty">As ondas estão em silêncio.<br>Envia a primeira mensagem.</div></div><form id="chatForm" class="chat-form"><input id="chatInput" maxlength="500" placeholder="Escreve uma mensagem…" autocomplete="off"><button aria-label="Enviar mensagem">↗</button></form></div><div class="rules-card"><div class="section-kicker">PROTOCOLO</div><p>À noite, o Sindicato pode comunicar em privado. De dia, todos os habitantes podem conversar e votar quem será levado à Fornalha.</p></div></aside>
+      <section class="center-column"><div class="player-panel"><div class="panel-heading"><div><div class="section-kicker">DISTRITO DA FULIGEM</div><h2>Habitantes <span id="aliveCount">00</span></h2></div><div class="live-label"><i></i> AO VIVO</div></div><div id="playersList" class="players-list"></div><div id="actionArea" class="action-area" aria-live="polite"></div></div></section>
+      <aside class="right-column"><div class="chat-panel"><div class="chat-heading"><div><div class="section-kicker">TRANSMISSÃO</div><h3>Frequência</h3></div><span id="chatScope" class="chat-scope">DISTRITO</span></div><div id="chatMessages" class="chat-messages"><div class="chat-empty">As ondas estão em silêncio.<br>Envia a primeira mensagem.</div></div><div id="chatTypingIndicator" class="chat-typing-indicator" aria-live="polite" aria-hidden="true"></div><form id="chatForm" class="chat-form"><input id="chatInput" maxlength="500" placeholder="Escreve uma mensagem…" autocomplete="off"><button aria-label="Enviar mensagem">↗</button></form></div><div class="rules-card"><div class="section-kicker">PROTOCOLO</div><p>À noite, o Sindicato pode comunicar em privado. De dia, todos os habitantes podem conversar e votar quem será levado à Fornalha.</p></div></aside>
     </section>
     <section id="victoryBanner" class="victory-banner hidden" role="dialog" aria-modal="true" aria-labelledby="victoryText">
       <div id="victoryPanel" class="victory-panel">
@@ -180,6 +180,8 @@
       <p id="leaderboardFeedback" class="leaderboard-feedback" aria-live="polite"></p>
     </div>
   </section>
-  <script src="/socket.io/socket.io.js"></script><script src="/app.js?v=20261027-7"></script>
+  <div id="reconnect-screen" class="steampunk-box" style="display:none;" role="status" aria-live="assertive" aria-hidden="true"><h2 class="gold-text animate-pulse">⚙️ Reconectando Sistemas...</h2><p>Sua conexão vacilou. Reconectando à Oficina em instantes...</p></div>
+  <div id="transition-overlay" class="transition-overlay" aria-hidden="true"><div class="transition-caption"><span class="transition-gear" aria-hidden="true">⚙</span><span id="transition-caption-text">AS ESCOTILHAS ESTÃO A MOVER-SE</span></div></div>
+  <script src="/socket.io/socket.io.js"></script><script src="/app.js?v=20261027-11"></script>
 </body>
 </html>

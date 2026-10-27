@@ -717,6 +717,19 @@ function installSocketHandlers(io) {
       } catch (err) { error(socket, err); }
     });
 
+    socket.on('syndicateTargetSelection', ({ targetId } = {}) => {
+      try {
+        const game = getGame(socket);
+        if (!game) throw new Error('Entra numa oficina primeiro.');
+        const aim = game.selectSyndicateTarget(socket.id, targetId);
+        for (const recipient of game.players.values()) {
+          if (recipient.id === socket.id || !recipient.alive || recipient.isDisconnected || recipient.connected === false) continue;
+          if (getFaction(recipient.role) !== 'syndicate') continue;
+          io.to(recipient.id).emit('updateSyndicateMiras', aim);
+        }
+      } catch (err) { error(socket, err); }
+    });
+
     socket.on('startGame', () => {
       try {
         const game = getGame(socket);
@@ -789,6 +802,25 @@ function installSocketHandlers(io) {
     };
     socket.on('sendMessage', handleSendMessage);
     socket.on('chatMessage', handleSendMessage); // compatibilidade com clientes anteriores
+
+    // O estado de digitação só é transmitido durante a conversa pública.
+    // O roomCode recebido do cliente não é confiado: a sala é resolvida pelo socket.
+    socket.on('playerTyping', ({ isTyping } = {}) => {
+      const game = getGame(socket);
+      const player = game?.getPlayer(socket.id);
+      if (!game || !player) return;
+      const typing = Boolean(isTyping);
+      if (typing && (!player.alive || game.ended || !['DAY', 'VOTING'].includes(game.phase) || player.isSilenced)) return;
+      const payload = {
+        sender: player.name,
+        senderId: player.id,
+        isTyping: typing
+      };
+      for (const recipient of game.players.values()) {
+        if (recipient.id === player.id || !recipient.alive || recipient.isDisconnected || recipient.connected === false) continue;
+        io.to(recipient.id).emit('playerTyping', payload);
+      }
+    });
 
     socket.on('disconnect', () => {
       const roomCode = playerRooms.get(socket.id);

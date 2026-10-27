@@ -3,7 +3,10 @@
   const MIN_PLAYERS = 2;
   const $ = (id) => document.getElementById(id);
   const landing = $('landing'), game = $('game'), lobbyPanel = $('lobbyPanel'), gamePanel = $('gamePanel');
-  let state = null, playerId = null, roomCode = null, selectedTarget = null, toastTimer = null, revealedRole = null, revealTimer = null, gameOverPayload = null;
+  let state = null, playerId = null, roomCode = null, selectedTargetId = null, selectedTargetIds = [], selectedSyndicateTargetId = null, secondaryTargetId = null, toastTimer = null, revealedRole = null, revealTimer = null, gameOverPayload = null;
+  let typingTimeout = null, transitionTimeout = null, lastTransitionPhase = null, lastTransitionAt = 0, localIsTyping = false;
+  const typingPlayers = new Map();
+  const syndicateMiras = new Map();
   let accountProfile = null, matchProgress = null;
   const cosmetics = [
     { id: 'titulo_mestre_caldeira', name: 'Mestre da Caldeira', price: 150, kind: 'TÍTULO', description: 'Um título de prestígio exibido ao lado do teu nome na lista da oficina.' },
@@ -344,6 +347,7 @@
   });
   function enterRoom(data) {
     if (leavingRoom) return;
+    hideReconnectScreen();
     roomCode = data.roomCode; playerId = data.playerId;
     if (data.reconnectToken) {
       sessionStorage.setItem('cidadeDormeReconnect', JSON.stringify({
@@ -364,13 +368,37 @@
     $('lobby-chat-input').disabled = false;
     $('btn-send-lobby-message').disabled = false;
   }
+  function showReconnectScreen() {
+    const screen = $('reconnect-screen');
+    screen.style.display = 'grid';
+    screen.setAttribute('aria-hidden', 'false');
+    landing.classList.add('hidden');
+    game.classList.add('hidden');
+    clearTimeout(transitionTimeout);
+    $('transition-overlay').classList.remove('is-active');
+    $('transition-overlay').setAttribute('aria-hidden', 'true');
+  }
+  function hideReconnectScreen() {
+    const screen = $('reconnect-screen');
+    if (!screen) return;
+    screen.style.display = 'none';
+    screen.setAttribute('aria-hidden', 'true');
+  }
   function returnToMenu() {
     audioManager.stopAll();
+    syndicateMiras.clear();
+    hideReconnectScreen();
+    clearTimeout(typingTimeout);
+    clearTimeout(transitionTimeout);
+    clearTypingPlayers();
+    lastTransitionPhase = null;
+    $('transition-overlay').classList.remove('is-active');
+    $('transition-overlay').setAttribute('aria-hidden','true');
     state = null;
     playerId = null;
     roomCode = null;
     sessionStorage.removeItem('cidadeDormeReconnect');
-    selectedTarget = null;
+    clearTargetSelection();
     revealedRole = null;
     gameOverPayload = null;
     clearTimeout(revealTimer);
@@ -467,174 +495,244 @@
   }
   function renderPlayers() {
     $('playersList').innerHTML = state.players.map((p) => {
-      const self = p.id === playerId, canTarget = targetable(p), role = p.role ? roleNames[p.role] : null;
-      const selected = selectedTarget === p.id;
-      const nightAction = state.phase === 'NIGHT' && canTarget ? quickNightAction(state.me?.role) : null;
-      const canVote = state.phase === 'VOTING' && p.alive && !self && !state.me?.bribeVoteLocked;
-      const canShoot = ['DAY','VOTING'].includes(state.phase) && state.me?.role === 'INVENTOR' && state.me?.bullets > 0 && p.alive && !self;
-      const syndicateVoter = ['SMOKE','INDUSTRIAL_SPY','PATENT_FORGER','ETHER_SMUGGLER','CLANDESTINE_INFORMANT','COPPER_BANKER'].includes(state.me?.role);
-      const syndicateIds = (state.syndicate || []).map(member => member.id);
-      const canVoteSyndicateAttack = state.phase === 'NIGHT' && syndicateVoter && p.alive && !self && !syndicateIds.includes(p.id);
+      const self = p.id === playerId;
+      const canTarget = targetable(p);
+      const role = p.role ? roleNames[p.role] : null;
+      const selected = selectedTargetId === p.id || selectedTargetIds.includes(p.id) || selectedSyndicateTargetId === p.id || secondaryTargetId === p.id;
+      const aimingMembers = [...syndicateMiras.values()].filter(mira => mira.targetId === p.id);
+      const aimLabel = aimingMembers.map(mira => `<span class="syndicate-aim-label">⌖ ${escapeHtml(mira.senderName)} mira aqui</span>`).join('');
       const votes = state.voteCounts?.[p.id] || 0;
-      const showNightButton = nightAction && state.me?.role !== 'SABOTEUR';
-      const controls = `${showNightButton?`<button class="card-action night-action" data-card-action="${nightAction.event}" ${nightAction.action?`data-action="${nightAction.action}"`:''} data-target-id="${escapeHtml(p.id)}" aria-label="${nightAction.label} ${escapeHtml(p.name)}"><span>${nightAction.icon}</span>${nightAction.label}</button>`:''}${canVote?`<button class="card-action vote-action" data-vote-target="${escapeHtml(p.id)}" aria-label="Votar em ${escapeHtml(p.name)}">⚒ Votar</button>`:''}${canShoot?`<button class="card-action shoot-action" data-shoot-target="${escapeHtml(p.id)}" aria-label="Disparar contra ${escapeHtml(p.name)}">⌖ Disparar</button>`:''}`;
-      const badge = state.phase === 'VOTING' ? `<span class="vote-count" aria-label="${votes} voto(s)">⚙ ${votes}</span>` : '';
       const bribedClass = self && state.me?.bribeVoteControlled ? 'bribed-vote' : '';
       const bribeBadge = self && state.me?.bribeVoteLocked ? '<span class="bribe-badge" title="O teu voto foi confiscado">🪙 VOTO HERDADO</span>' : '';
-      const directSyndicateTarget = canVoteSyndicateAttack || (state.phase === 'NIGHT' && state.me?.role === 'SABOTEUR' && canTarget);
-      return `<div class="player-row ${p.alive?'':'dead'} ${p.border==='bronze'?'frame-bronze':p.border==='gold'?'frame-gold':''} ${p.isDisconnected?'player-disconnected':''} ${selected?'selected':''} ${state.phase==='VOTING'?'voting-card':''} ${bribedClass} ${directSyndicateTarget?'direct-target':''}" ${directSyndicateTarget?`data-player-target="${escapeHtml(p.id)}"`:''}>${badge}<div class="player-avatar">${p.alive?'⚙':'†'}</div><span class="player-name">${escapeHtml(p.name)}${self?' (tu)':''}${p.title?` <small class="player-cosmetic-title">${escapeHtml(p.title)}</small>`:''}</span>${bribeBadge}${role?`<span class="player-role">${escapeHtml(role)}</span>`:`<span class="player-state ${p.alive?'alive':'dead'}">${p.alive?(p.isDisconnected?'[A RECONECTAR]':'VIVO'):'[DESTRUÍDO]'}</span>`}${directSyndicateTarget?'<span class="direct-target-hint">ALVO · CLICAR</span>':''}${controls}</div>`;
+      const badge = state.phase === 'VOTING' ? `<span class="vote-count" aria-label="${votes} voto(s)">⚙ ${votes}</span>` : '';
+      return `<div class="player-row ${p.alive?'':'dead'} ${p.border==='bronze'?'frame-bronze':p.border==='gold'?'frame-gold':''} ${p.isDisconnected?'player-disconnected':''} ${selected?'selected selected-card':''} ${canTarget?'selectable-card':''} ${aimingMembers.length?'syndicate-aim':''} ${state.phase==='VOTING'?'voting-card':''} ${bribedClass}" ${canTarget?`data-select-target="${escapeHtml(p.id)}" role="button" tabindex="0" aria-pressed="${selected}"`:''}>${badge}<div class="player-avatar">${p.alive?'⚙':'†'}</div><span class="player-name">${escapeHtml(p.name)}${self?' (tu)':''}${p.title?` <small class="player-cosmetic-title">${escapeHtml(p.title)}</small>`:''}</span>${bribeBadge}${role?`<span class="player-role">${escapeHtml(role)}</span>`:`<span class="player-state ${p.alive?'alive':'dead'}">${p.alive?(p.isDisconnected?'[A RECONECTAR]':'VIVO'):'[DESTRUÍDO]'}</span>`}${aimLabel}${canTarget?'<span class="direct-target-hint">CLICAR PARA SELECIONAR</span>':''}</div>`;
     }).join('');
-  }
-  function quickNightAction(role) {
-    return ({
-      CLOCKMAKER:{event:'nightAction_Investigate',icon:'◉',label:'Investigar'},
-      ALCHEMIST:{event:'nightAction_Protect',icon:'⬡',label:'Proteger'},
-      SABOTEUR:{event:'nightAction_Kill',icon:'⌖',label:'Atacar'},
-      SMOKE:{event:'nightAction_Disguise',icon:'♨',label:'Disfarçar'},
-      TESLA_ENGINEER:{event:'nightAction_Watch',icon:'⌖',label:'Vigiar'},
-      PRESSURE_TRAPPER:{event:'playerAction',action:'trap',icon:'⚑',label:'Armar'},
-      CLANDESTINE_INFORMANT:{event:'playerAction',action:'silence',icon:'⊘',label:'Silenciar'},
-      INDUSTRIAL_SPY:{event:'nightAction_Spy',icon:'◉',label:'Identificar cargo'},
-      MAINTENANCE_MECHANIC:{event:'nightAction_Revive',icon:'✚',label:'Reparar'},
-      COPPER_BANKER:{event:'nightAction_Bribe',icon:'🪙',label:'Subornar'},
-      AUTOMATON:{event:'nightAction_Kill',icon:'⌖',label:'Eliminar'}
-      ,SOUL_COLLECTOR:{event:'nightAction_Mechanize',icon:'⚙',label:'Mecanizar'}
-    })[role] || null;
   }
   function targetable(p) {
     const role = state.me?.role;
     if (state.phase === 'NIGHT') {
+      const syndicateVoter = ['SABOTEUR','SMOKE','INDUSTRIAL_SPY','PATENT_FORGER','ETHER_SMUGGLER','CLANDESTINE_INFORMANT','COPPER_BANKER'].includes(role);
+      const syndicateIds = (state.syndicate || []).map(member => member.id);
+      const isSyndicateEnemy = p.alive && p.id !== playerId && !syndicateIds.includes(p.id);
+      if (syndicateVoter && isSyndicateEnemy) return true;
       if (role === 'MAINTENANCE_MECHANIC') return !state.me.revivalUsed && !p.alive && p.id !== playerId;
       if (role === 'SOUL_COLLECTOR') return p.alive && !p.isMechanized;
+      if (role === 'REVERSE_ENGINEER') {
+        const candidates = state.me.reverseCandidates || [];
+        if (!selectedTargetId || !candidates.some(candidate => candidate.deadTargetId === selectedTargetId))
+          return candidates.some(candidate => candidate.deadTargetId === p.id);
+        return candidates.some(candidate => candidate.deadTargetId === selectedTargetId && candidate.suspectId === p.id);
+      }
+      if (role === 'ARMOR_FABRICATOR') return !state.me.armorUsed && p.alive;
+      if (role === 'SCRAP_GRAVEDIGGER') return p.alive && p.id !== playerId;
+      if (role === 'MAD_SCIENTIST') return p.alive && p.id !== playerId && !state.me.actionSubmitted;
+      if (role === 'ETHER_SMUGGLER') return p.alive && p.id !== playerId;
       if (!p.alive || p.id === playerId) return false;
       const teammateIds = (state.syndicate || []).map(member => member.id);
       if (role === 'SMOKE') return teammateIds.includes(p.id);
       if (role === 'SABOTEUR') return !teammateIds.includes(p.id);
-      return ['CLOCKMAKER','ALCHEMIST','AUTOMATON','TESLA_ENGINEER','INDUSTRIAL_SPY','PRESSURE_TRAPPER','CLANDESTINE_INFORMANT','ETHER_SMUGGLER','COPPER_BANKER'].includes(role);
+      return ['CLOCKMAKER','ALCHEMIST','AUTOMATON','TESLA_ENGINEER','INDUSTRIAL_SPY','PRESSURE_TRAPPER','CLANDESTINE_INFORMANT','COPPER_BANKER','PATENT_FORGER'].includes(role);
     }
-    return p.alive && p.id !== playerId && (state.phase === 'VOTING' || (state.phase === 'DAY' && role === 'INVENTOR' && (state.me?.bullets||0)>0));
+    if (!p.alive || p.id === playerId) return false;
+    if (state.phase === 'VOTING') return !state.me?.bribeVoteLocked;
+    return state.phase === 'DAY' && role === 'INVENTOR' && (state.me?.bullets || 0) > 0;
+  }
+  function clearTargetSelection() {
+    selectedTargetId = null;
+    selectedTargetIds = [];
+    selectedSyndicateTargetId = null;
+    secondaryTargetId = null;
+  }
+  function renderTypingIndicator() {
+    const indicator = $('chatTypingIndicator');
+    if (!indicator) return;
+    const names = [...typingPlayers.values()].map(entry => entry.name);
+    indicator.replaceChildren();
+    indicator.setAttribute('aria-hidden', names.length ? 'false' : 'true');
+    indicator.classList.toggle('is-visible', names.length > 0);
+    if (!names.length) return;
+    const gear = document.createElement('span');
+    gear.className = 'typing-gear';
+    gear.setAttribute('aria-hidden', 'true');
+    gear.textContent = '⚙';
+    const label = document.createElement('span');
+    label.textContent = names.length === 1
+      ? `${names[0]} está a operar os transmissores…`
+      : `${names.join(', ')} estão a operar os transmissores…`;
+    indicator.append(gear, label);
+  }
+  function clearTypingPlayers() {
+    for (const entry of typingPlayers.values()) clearTimeout(entry.timeout);
+    typingPlayers.clear();
+    renderTypingIndicator();
+  }
+  function sendTypingStatus(isTyping) {
+    if (!state || !roomCode) return;
+    if (isTyping && (!['DAY','VOTING'].includes(state.phase) || $('chatInput').disabled)) return;
+    if (localIsTyping === Boolean(isTyping)) return;
+    localIsTyping = Boolean(isTyping);
+    socket.emit('playerTyping', { roomCode, isTyping });
+  }
+  function animatePhaseTransition(phase) {
+    const overlay = $('transition-overlay');
+    if (!overlay || !['NIGHT','DAY','VOTING'].includes(phase)) return;
+    const now = Date.now();
+    if (phase === lastTransitionPhase && now - lastTransitionAt < 1500) return;
+    lastTransitionPhase = phase;
+    lastTransitionAt = now;
+    $('transition-caption-text').textContent = phase === 'NIGHT'
+      ? 'AS ESCOTILHAS FECHAM · A ENGRENAGEM GIRA'
+      : phase === 'VOTING' ? 'O TRIBUNAL DE BRONZE É CONVOCADO' : 'AS ESCOTILHAS ABREM · O DIA REGRESSA';
+    clearTimeout(transitionTimeout);
+    overlay.classList.remove('is-active');
+    overlay.setAttribute('aria-hidden', 'false');
+    void overlay.offsetWidth;
+    overlay.classList.add('is-active');
+    transitionTimeout = setTimeout(() => {
+      overlay.classList.remove('is-active');
+      overlay.setAttribute('aria-hidden', 'true');
+    }, 1500);
+  }
+  function selectPlayerCard(targetId) {
+    const player = state?.players.find(candidate => candidate.id === targetId);
+    if (!player || !targetable(player)) return;
+    const role = state.me?.role;
+    const teammates = (state.syndicate || []).map(member => member.id);
+    const canCastSyndicateVote = state.phase === 'NIGHT' && ['SABOTEUR','SMOKE','INDUSTRIAL_SPY','PATENT_FORGER','ETHER_SMUGGLER','CLANDESTINE_INFORMANT','COPPER_BANKER'].includes(role) && player.alive && player.id !== playerId && !teammates.includes(player.id);
+    if (canCastSyndicateVote) {
+      selectedSyndicateTargetId = targetId;
+      socket.emit('syndicateTargetSelection', { targetId });
+    }
+
+    if (state.phase === 'NIGHT' && ['ARMOR_FABRICATOR','ETHER_SMUGGLER','SCRAP_GRAVEDIGGER'].includes(role)) {
+      const limit = role === 'ARMOR_FABRICATOR' ? 3 : 2;
+      const wasSelected = selectedTargetIds.includes(targetId);
+      if (wasSelected) selectedTargetIds = selectedTargetIds.filter(id => id !== targetId);
+      else if (selectedTargetIds.length < limit) selectedTargetIds.push(targetId);
+      else return showToast(`Seleciona no máximo ${limit} pessoas.`);
+      if (role === 'ETHER_SMUGGLER') {
+        selectedTargetId = selectedTargetIds[0] || null;
+        secondaryTargetId = selectedTargetIds[1] || null;
+      } else if (role === 'SCRAP_GRAVEDIGGER') {
+        selectedTargetId = selectedTargetIds[0] || null;
+        secondaryTargetId = selectedTargetIds[1] || null;
+      } else selectedTargetId = selectedTargetIds.at(-1) || null;
+    } else if (state.phase === 'NIGHT' && role === 'REVERSE_ENGINEER') {
+      const candidates = state.me.reverseCandidates || [];
+      const selectedDead = candidates.some(candidate => candidate.deadTargetId === selectedTargetId);
+      if (!selectedDead || !candidates.some(candidate => candidate.deadTargetId === selectedTargetId && candidate.suspectId === targetId)) {
+        selectedTargetId = targetId;
+        secondaryTargetId = null;
+      } else secondaryTargetId = targetId;
+    } else if (canCastSyndicateVote) {
+      selectedSyndicateTargetId = targetId;
+      // Nas classes com ação própria contra inimigos, o mesmo clique também escolhe o alvo da habilidade.
+      if (['SABOTEUR','INDUSTRIAL_SPY','CLANDESTINE_INFORMANT','COPPER_BANKER'].includes(role)) selectedTargetId = targetId;
+    } else {
+      selectedTargetId = targetId;
+      selectedTargetIds = [targetId];
+      secondaryTargetId = null;
+    }
+    renderPlayers();
+    renderActions();
   }
   function renderActions() {
     const area = $('actionArea');
     const role = state.me?.role, phase = state.phase;
     const canShoot = role === 'INVENTOR' && ['DAY','VOTING'].includes(phase) && state.me.bullets > 0;
-    if (phase === 'NIGHT' && role === 'SABOTEUR') {
-      area.innerHTML = '<div class="action-prompt">SINDICATO REBELDE · CLICA NUM HABITANTE VIVO PARA DEFINIR O ATAQUE.</div>';
-      return;
-    }
+    const selectedName = state.players.find(player => player.id === selectedTargetId)?.name;
+    const secondName = state.players.find(player => player.id === secondaryTargetId)?.name;
+    const selectionNote = selectedName ? `<span class="target-selection-note">Alvo: ${escapeHtml(selectedName)}${secondName?` · ${escapeHtml(secondName)}`:''}</span>` : '<span class="target-selection-note">Clica num card elegível para escolher.</span>';
+    const button = (id, label, disabled=false, className='button action-button') => `<button id="${id}" class="${className}" ${disabled?'disabled':''}>${label}</button>`;
+    const syndicateVoteButton = () => {
+      if (phase !== 'NIGHT' || !['SMOKE','INDUSTRIAL_SPY','PATENT_FORGER','ETHER_SMUGGLER','CLANDESTINE_INFORMANT','COPPER_BANKER'].includes(role)) return '';
+      return button('syndicateVoteSubmit', selectedSyndicateTargetId ? `DEFINIR ATAQUE · ${escapeHtml(state.players.find(p=>p.id===selectedSyndicateTargetId)?.name||'ALVO')}` : 'DEFINIR ATAQUE DO SINDICATO', !selectedSyndicateTargetId, 'button syndicate-vote-action');
+    };
     if (phase === 'NIGHT' && role === 'BRONZE_SMITH') {
       const submitted=state.me.actionSubmitted, charges=state.me.bronzeCharges||0, alerted=Boolean(state.me.isAlerted);
       const buttonText=alerted?'🔒 OFICINA TRANCADA · ALERTA MÁXIMO':`🔥 Ativar Fornalha de Pressão (Cargas: ${charges}/2)`;
-      area.innerHTML=`<div class="action-prompt">FERREIRO DE BRONZE · ${alerted?'OS VISITANTES SERÃO CONSUMIDOS PELO VAPOR':charges>0?'A FORNALHA PODE SER ARMADA DUAS VEZES POR PARTIDA':'CARGAS ESGOTADAS'}</div><div class="action-row"><button id="veteranActivate" class="button forge-alert-button ${alerted?'is-alerted':''}" ${submitted||charges<=0?'disabled':''}>${submitted&&!alerted?'CARGA GUARDADA ESTA NOITE':buttonText}</button>${charges>0&&!submitted?'<button id="veteranSkip" class="button action-button">GUARDAR CARGA</button>':''}</div>`;
+      area.innerHTML=`<div class="action-prompt">FERREIRO DE BRONZE · ${alerted?'OS VISITANTES SERÃO CONSUMIDOS PELO VAPOR':charges>0?'A FORNALHA PODE SER ARMADA DUAS VEZES POR PARTIDA':'CARGAS ESGOTADAS'}</div><div class="action-row">${button('veteranActivate',buttonText,submitted||charges<=0,`button forge-alert-button ${alerted?'is-alerted':''}`)}${charges>0&&!submitted?button('veteranSkip','GUARDAR CARGA'):''}</div>`;
       $('veteranActivate').onclick=()=>socket.emit('nightAction_ActivateAlert');
       if($('veteranSkip')) $('veteranSkip').onclick=()=>socket.emit('nightAction_SkipAlert');
       return;
     }
     if (phase === 'NIGHT' && role === 'TIMEKEEPER') {
       const submitted=state.me.actionSubmitted, used=state.me.timeRewindUsed;
-      area.innerHTML=`<div class="action-prompt">CRONOMETRISTA · ${used?'RETROCESSO JÁ UTILIZADO':'PODE IMPEDIR UMA MORTE ESTA NOITE'}</div><div class="action-row"><button id="rewindSubmit" class="button action-button" ${submitted||used?'disabled':''}>${used?'JÁ UTILIZADO':submitted?'RETROCESSO ARMADO':'ATIVAR RETROCESSO'} ↶</button></div>`;
+      area.innerHTML=`<div class="action-prompt">CRONOMETRISTA · ${used?'RETROCESSO JÁ UTILIZADO':'PODE IMPEDIR UMA MORTE ESTA NOITE'}</div><div class="action-row">${button('rewindSubmit',used?'JÁ UTILIZADO':submitted?'RETROCESSO ARMADO':'ATIVAR RETROCESSO ↶',submitted||used)}</div>`;
       $('rewindSubmit').onclick=()=>socket.emit('playerAction',{action:'rewind'});
       return;
     }
-    if (phase === 'NIGHT' && role === 'ETHER_SMUGGLER') {
-      const submitted=state.me.actionSubmitted, options=state.players.filter(p=>p.alive&&p.id!==playerId).map(p=>`<option value="${escapeHtml(p.id)}">${escapeHtml(p.name)}</option>`).join('');
-      area.innerHTML=`<div class="action-prompt">CONTRABANDISTA DE ÉTER · TROCA DUAS IDENTIDADES DE INSPEÇÃO</div><div class="action-row"><select id="swapFirst" class="action-select"><option value="">Primeira identidade…</option>${options}</select><select id="swapSecond" class="action-select"><option value="">Segunda identidade…</option>${options}</select><button id="swapSubmit" class="button action-button" ${submitted?'disabled':''}>TROCAR IDENTIDADES ↗</button></div>`;
-      $('swapSubmit').onclick=()=>{const targetId=$('swapFirst').value,secondTargetId=$('swapSecond').value;if(!targetId||!secondTargetId||targetId===secondTargetId)return showToast('Escolhe duas pessoas diferentes.');socket.emit('playerAction',{action:'swapInspection',targetId,secondTargetId});};
-      return;
-    }
-    if (phase === 'NIGHT' && role === 'PATENT_FORGER') {
-      area.innerHTML = '<div class="action-prompt">FALSIFICADOR DE PATENTES · CLICA NUM HABITANTE VIVO PARA APOIAR O ATAQUE DO SINDICATO.</div>';
-      return;
-    }
     if (phase === 'NIGHT' && role === 'REVERSE_ENGINEER') {
-      const candidates = state.me.reverseCandidates || [];
-      const deadOptions = [...new Map(candidates.map(c => [c.deadTargetId, c])).values()];
-      area.innerHTML = `<div class="action-prompt">ENGENHEIRO REVERSO · ANALISA UM VOTO CONTRA UMA PESSOA ELIMINADA</div>${deadOptions.length ? `<div class="action-row"><select id="reverseDead" class="action-select"><option value="">Pessoa eliminada…</option>${deadOptions.map(c=>`<option value="${escapeHtml(c.deadTargetId)}">${escapeHtml(c.deadTargetName)}</option>`).join('')}</select><select id="reverseSuspect" class="action-select"><option value="">Suspeito que votou…</option></select><button id="reverseSubmit" class="button action-button" ${state.me.actionSubmitted?'disabled':''}>ANALISAR VOTO ↗</button></div>` : '<p class="action-prompt">Ainda não há pessoas eliminadas por votação com suspeitos registados.</p>'}`;
-      if (deadOptions.length) {
-        const fillSuspects = () => {
-          const suspects = candidates.filter(c=>c.deadTargetId===$('reverseDead').value);
-          $('reverseSuspect').innerHTML = `<option value="">Suspeito que votou…</option>${suspects.map(c=>`<option value="${escapeHtml(c.suspectId)}">${escapeHtml(c.suspectName)}</option>`).join('')}`;
-        };
-        $('reverseDead').onchange = fillSuspects;
-        $('reverseSubmit').onclick = () => {
-          const targetId=$('reverseDead').value, secondTargetId=$('reverseSuspect').value;
-          if (!targetId || !secondTargetId) return showToast('Escolhe a pessoa eliminada e um dos seus votantes.');
-          socket.emit('playerAction',{action:'reverseAnalyze',targetId,secondTargetId});
-        };
-      }
+      const candidates=state.me.reverseCandidates||[];
+      const deadCandidate=candidates.find(candidate=>candidate.deadTargetId===selectedTargetId);
+      const validSuspect=deadCandidate&&candidates.some(candidate=>candidate.deadTargetId===selectedTargetId&&candidate.suspectId===secondaryTargetId);
+      area.innerHTML=`<div class="action-prompt">ENGENHEIRO REVERSO · CLICA NUM CARD DE JOGADOR ELIMINADO E DEPOIS NUM DOS SEUS VOTANTES.</div><div class="action-row">${selectionNote}${button('reverseSubmit','ANALISAR VOTO ↗',state.me.actionSubmitted||!validSuspect)}</div>`;
+      $('reverseSubmit').onclick=()=>{if(!validSuspect)return showToast('Seleciona uma pessoa eliminada e depois um dos seus votantes.');socket.emit('playerAction',{action:'reverseAnalyze',targetId:selectedTargetId,secondTargetId});};
       return;
     }
     if (phase === 'NIGHT' && role === 'ARMOR_FABRICATOR') {
-      const options=state.players.filter(p=>p.alive);
-      area.innerHTML=`<div class="action-prompt">FABRICANTE DE BLINDAGEM · DISTRIBUI ATÉ TRÊS PLACAS UMA VEZ POR PARTIDA</div><div class="action-row"><select id="armorTargets" class="action-select" multiple size="4" ${state.me.armorUsed?'disabled':''}>${options.map(p=>`<option value="${escapeHtml(p.id)}">${escapeHtml(p.name)}</option>`).join('')}</select><button id="armorSubmit" class="button action-button" ${state.me.actionSubmitted||state.me.armorUsed?'disabled':''}>${state.me.armorUsed?'PLACAS UTILIZADAS':'FORJAR PLACAS ↗'}</button></div>`;
-      $('armorSubmit').onclick=()=>{const targetIds=[...$('armorTargets').selectedOptions].map(o=>o.value);if(!targetIds.length||targetIds.length>3)return showToast('Seleciona entre uma e três pessoas vivas.');socket.emit('playerAction',{action:'armor',targetIds});};
+      area.innerHTML=`<div class="action-prompt">FABRICANTE DE BLINDAGEM · CLICA EM ATÉ TRÊS CARDS VIVOS PARA ATRIBUIR PLACAS.</div><div class="action-row">${selectionNote}<span class="target-selection-count">${selectedTargetIds.length}/3 placas</span>${button('armorSubmit',state.me.armorUsed?'PLACAS UTILIZADAS':'FORJAR PLACAS ↗',state.me.actionSubmitted||state.me.armorUsed||!selectedTargetIds.length)}</div>`;
+      $('armorSubmit').onclick=()=>socket.emit('playerAction',{action:'armor',targetIds:[...selectedTargetIds]});
       return;
     }
-    if (phase === 'NIGHT' && role === 'MAD_SCIENTIST') {
-      const submitted = state.me.actionSubmitted;
-      const targets = state.players.filter(p => p.alive && p.id !== playerId);
-      const oilCount = state.me.oiledTargets || 0;
-      const detonated = Boolean(state.me.detonationTriggered);
-      area.innerHTML = `<div class="action-prompt">CIENTISTA LOUCO · ${oilCount} ALVO(S) OLEADO(S)</div><div class="action-row"><select id="oilTarget" class="action-select"><option value="">Escolhe quem oleiar…</option>${targets.map(p=>`<option value="${escapeHtml(p.id)}">${escapeHtml(p.name)}</option>`).join('')}</select><button id="oilSubmit" class="button action-button" ${submitted?'disabled':''}>BOMBEAR ÓLEO ↗</button><button id="detonateSubmit" class="button detonation-button" ${submitted||!oilCount||detonated?'disabled':''}>${detonated?'VÁLVULA ATIVADA':'💥 Ativar Detonador de Óleo'}</button></div>`;
-      $('oilSubmit').onclick = () => {
-        const targetId = $('oilTarget').value;
-        if (!targetId) return showToast('Escolhe um jogador para oleiar.');
-        socket.emit('nightAction_PumpOil', { targetId });
-      };
-      $('detonateSubmit').onclick = () => socket.emit('nightAction_DetonateOil');
+    if (phase === 'NIGHT' && role === 'ETHER_SMUGGLER') {
+      area.innerHTML=`<div class="action-prompt">CONTRABANDISTA DE ÉTER · CLICA EM DOIS HABITANTES PARA TROCAR AS IDENTIDADES DE INSPEÇÃO.</div><div class="action-row">${selectionNote}${button('swapSubmit','TROCAR IDENTIDADES ↗',state.me.actionSubmitted||selectedTargetIds.length!==2)}${syndicateVoteButton()}</div>`;
+      $('swapSubmit').onclick=()=>socket.emit('playerAction',{action:'swapInspection',targetId:selectedTargetIds[0],secondTargetId:selectedTargetIds[1]});
+      if($('syndicateVoteSubmit')) $('syndicateVoteSubmit').onclick=()=>socket.emit('syndicateVote',{targetId:selectedSyndicateTargetId});
       return;
     }
     if (phase === 'NIGHT' && role === 'SCRAP_GRAVEDIGGER') {
-      const submitted = state.me.actionSubmitted;
-      const players = state.players.filter(p => p.alive && p.id !== playerId);
-      const options = players.map(p=>`<option value="${escapeHtml(p.id)}">${escapeHtml(p.name)}</option>`).join('');
-      area.innerHTML = `<div class="action-prompt">COVEIRO DE SUCATA · ESCOLHE QUEM SERÁ DESVIADO E O NOVO ALVO</div><div class="action-row"><select id="redirectPlayer" class="action-select"><option value="">Jogador afetado…</option>${options}</select><select id="redirectTarget" class="action-select"><option value="">Novo alvo…</option>${options}</select><button id="redirectSubmit" class="button action-button" ${submitted?'disabled':''}>DESVIAR AÇÃO ↗</button></div>`;
-      $('redirectSubmit').onclick = () => {
-        const targetId = $('redirectPlayer').value, redirectTargetId = $('redirectTarget').value;
-        if (!targetId || !redirectTargetId) return showToast('Escolhe o jogador afetado e o novo alvo.');
-        if (targetId === redirectTargetId) return showToast('O novo alvo tem de ser diferente do jogador afetado.');
-        socket.emit('nightAction_Redirect', { targetId, redirectTargetId });
-      };
+      area.innerHTML=`<div class="action-prompt">COVEIRO DE SUCATA · CLICA NO JOGADOR AFETADO E DEPOIS NO NOVO ALVO.</div><div class="action-row">${selectionNote}${button('redirectSubmit','DESVIAR AÇÃO ↗',state.me.actionSubmitted||selectedTargetIds.length!==2)}</div>`;
+      $('redirectSubmit').onclick=()=>{if(selectedTargetIds[0]===selectedTargetIds[1])return showToast('O novo alvo tem de ser diferente.');socket.emit('nightAction_Redirect',{targetId:selectedTargetIds[0],redirectTargetId:selectedTargetIds[1]});};
       return;
     }
-    if (phase === 'NIGHT' && ['CLOCKMAKER','ALCHEMIST','SABOTEUR','SMOKE','AUTOMATON','TESLA_ENGINEER','INDUSTRIAL_SPY','MAINTENANCE_MECHANIC','PRESSURE_TRAPPER','CLANDESTINE_INFORMANT','COPPER_BANKER','SOUL_COLLECTOR'].includes(role)) {
-      const submitted = state.me.actionSubmitted;
-      const revivalUsed = role === 'MAINTENANCE_MECHANIC' && state.me.revivalUsed;
-      const labels = {
-        CLOCKMAKER:'ESCOLHE QUEM INVESTIGAR', ALCHEMIST:'ESCOLHE QUEM PROTEGER', SABOTEUR:'ESCOLHE O ALVO DO SINDICATO',
-        SMOKE:'ESCOLHE O ALIADO A DISFARÇAR', AUTOMATON:'ESCOLHE QUEM ELIMINAR', TESLA_ENGINEER:'ESCOLHE QUEM VIGIAR',
-        INDUSTRIAL_SPY:'ESCOLHE QUEM IDENTIFICAR', MAINTENANCE_MECHANIC:revivalUsed?'RESSURREIÇÃO JÁ UTILIZADA':'ESCOLHE QUEM RESSUSCITAR'
-        ,PRESSURE_TRAPPER:'ESCOLHE ONDE ARMAR A ARMADILHA', CLANDESTINE_INFORMANT:'ESCOLHE QUEM SILENCIAR AMANHÃ', COPPER_BANKER:'ESCOLHE QUEM SUBORNAR', SOUL_COLLECTOR:`COLECIONADOR DE ALMAS · ${state.me.mechanizedCount||0} MECANIZADO(S) · ESCOLHE UM ALVO`
+    if (phase === 'NIGHT' && role === 'MAD_SCIENTIST') {
+      const oilCount=state.me.oiledTargets||0, detonated=Boolean(state.me.detonationTriggered), submitted=Boolean(state.me.actionSubmitted);
+      area.innerHTML=`<div class="action-prompt">CIENTISTA LOUCO · ${oilCount} ALVO(S) OLEADO(S). ESCOLHE UM HABITANTE PARA BOMBEAR ÓLEO.</div><div class="action-row">${selectionNote}${button('oilSubmit','BOMBEAR ÓLEO ↗',submitted||!selectedTargetId)}${button('detonateSubmit',detonated?'VÁLVULA ATIVADA':'💥 ATIVAR DETONADOR',submitted||!oilCount||detonated,'button detonation-button')}</div>`;
+      $('oilSubmit').onclick=()=>socket.emit('nightAction_PumpOil',{targetId:selectedTargetId});
+      $('detonateSubmit').onclick=()=>socket.emit('nightAction_DetonateOil');
+      return;
+    }
+    if (phase === 'NIGHT') {
+      const actionConfig={
+        CLOCKMAKER:{label:'ESCOLHE QUEM INVESTIGAR',action:'inspect'}, ALCHEMIST:{label:'ESCOLHE QUEM PROTEGER',action:'protect'},
+        SABOTEUR:{label:'ESCOLHE O ALVO DO SINDICATO',event:'nightAction_Kill'}, SMOKE:{label:'ESCOLHE O ALIADO A DISFARÇAR',action:'disguise'},
+        AUTOMATON:{label:'ESCOLHE QUEM ELIMINAR',action:'automatonKill'}, TESLA_ENGINEER:{label:'ESCOLHE QUEM VIGIAR',action:'watch'},
+        INDUSTRIAL_SPY:{label:'ESCOLHE QUEM IDENTIFICAR',action:'spy'}, MAINTENANCE_MECHANIC:{label:state.me.revivalUsed?'RESSURREIÇÃO JÁ UTILIZADA':'ESCOLHE QUEM RESSUSCITAR',action:'revive'},
+        PRESSURE_TRAPPER:{label:'ESCOLHE ONDE ARMAR A ARMADILHA',action:'trap'}, CLANDESTINE_INFORMANT:{label:'ESCOLHE QUEM SILENCIAR AMANHÃ',action:'silence'},
+        COPPER_BANKER:{label:'ESCOLHE QUEM SUBORNAR',action:'bribe'}, SOUL_COLLECTOR:{label:`COLECIONADOR DE ALMAS · ${state.me.mechanizedCount||0} MECANIZADO(S) · ESCOLHE UM ALVO`,event:'nightAction_Mechanize'}
       };
-      const action = {
-        CLOCKMAKER:'inspect', ALCHEMIST:'protect', SABOTEUR:'syndicateKill', SMOKE:'disguise', AUTOMATON:'automatonKill',
-        TESLA_ENGINEER:'watch', INDUSTRIAL_SPY:'spy', MAINTENANCE_MECHANIC:'revive'
-        ,PRESSURE_TRAPPER:'trap', CLANDESTINE_INFORMANT:'silence', COPPER_BANKER:'bribe', SOUL_COLLECTOR:'mechanize'
-      }[role];
-      const options = state.players.filter(p=>targetable(p));
-      area.innerHTML = `<div class="action-prompt">${labels[role]}</div><div class="action-row"><select id="targetSelect" class="action-select" ${revivalUsed?'disabled':''}><option value="">Seleciona um habitante…</option>${options.map(p=>`<option value="${escapeHtml(p.id)}" ${selectedTarget===p.id?'selected':''}>${escapeHtml(p.name)}</option>`).join('')}</select><button id="actionSubmit" class="button action-button" ${submitted||revivalUsed?'disabled':''}>${submitted?'AÇÃO CONFIRMADA':revivalUsed?'JÁ UTILIZADA':'CONFIRMAR AÇÃO'} ↗</button></div>`;
-      $('actionSubmit').onclick = () => {
-        const targetId = $('targetSelect').value;
-        if (!targetId) return showToast('Seleciona um habitante primeiro.');
-        if(role==='SOUL_COLLECTOR') socket.emit('nightAction_Mechanize',{targetId});
-        else socket.emit('playerAction',{action,targetId});
+      const config=actionConfig[role];
+      if (!config && ['SMOKE','INDUSTRIAL_SPY','PATENT_FORGER','ETHER_SMUGGLER','CLANDESTINE_INFORMANT','COPPER_BANKER'].includes(role)) {
+        area.innerHTML=`<div class="action-prompt">SINDICATO REBELDE · CLICA NUM HABITANTE INIMIGO PARA ESCOLHER O ALVO DO ATAQUE.</div><div class="action-row">${selectionNote}${syndicateVoteButton()}</div>`;
+        if($('syndicateVoteSubmit')) $('syndicateVoteSubmit').onclick=()=>socket.emit('syndicateVote',{targetId:selectedSyndicateTargetId});
+        return;
+      }
+      if (!config) { area.innerHTML=''; return; }
+      const submitted=Boolean(state.me.actionSubmitted), revivalUsed=role==='MAINTENANCE_MECHANIC'&&state.me.revivalUsed;
+      area.innerHTML=`<div class="action-prompt">${config.label} · CLICA NO CARD DE UM HABITANTE.</div><div class="action-row">${selectionNote}${button('actionSubmit',submitted?'AÇÃO CONFIRMADA':revivalUsed?'JÁ UTILIZADA':'CONFIRMAR AÇÃO ↗',submitted||revivalUsed||!selectedTargetId)}${syndicateVoteButton()}</div>`;
+      $('actionSubmit').onclick=()=>{
+        if(!selectedTargetId)return showToast('Clica primeiro no card de um habitante elegível.');
+        if(config.event) socket.emit(config.event,{targetId:selectedTargetId});
+        else socket.emit('playerAction',{action:config.action,targetId:selectedTargetId});
       };
-    } else if (phase === 'VOTING') {
-      const options = state.players.filter(p=>p.alive && p.id!==playerId);
-      const controlled=Boolean(state.me.bribeVoteControlled), locked=Boolean(state.me.bribeVoteLocked);
-      area.innerHTML = `<div class="action-prompt">${controlled?(locked?'BANQUEIRO DE COBRE · O TEU VOTO FOI HERDADO':'SUBORNO ATIVO · AGUARDA A DECISÃO DO BANQUEIRO'):`ESCOLHE QUEM LEVAR À FORNALHA · ${state.me.voted?'VOTO REGISTADO':''}`}</div><div class="action-row"><select id="voteSelect" class="action-select" ${controlled?'disabled':''}><option value="">Abster-se</option>${options.map(p=>`<option value="${escapeHtml(p.id)}">${escapeHtml(p.name)}</option>`).join('')}</select><button id="voteSubmit" class="button vote-button" ${controlled?'disabled':''}>${controlled?'🪙 VOTO CONFISCADO':state.me.voted?'ALTERAR VOTO':'VOTAR'} ↗</button>${canShoot?'<button id="shootSubmit" class="button action-button">DISPARAR · 1 MUNIÇÃO</button>':''}</div>`;
-      if(!controlled)$('voteSubmit').onclick = () => socket.emit('submitVote',{targetId:$('voteSelect').value||null});
+      if($('syndicateVoteSubmit')) $('syndicateVoteSubmit').onclick=()=>socket.emit('syndicateVote',{targetId:selectedSyndicateTargetId});
+      return;
+    }
+    if (phase === 'VOTING') {
+      const controlled=Boolean(state.me.bribeVoteControlled||state.me.bribeVoteLocked);
+      area.innerHTML=`<div class="action-prompt">${controlled?'BANQUEIRO DE COBRE · O TEU VOTO FOI HERDADO':`ESCOLHE QUEM LEVAR À FORNALHA · ${state.me.voted?'VOTO REGISTADO':''}`}</div><div class="action-row">${selectionNote}${button('voteSubmit',controlled?'🪙 VOTO CONFISCADO':state.me.voted?'ALTERAR VOTO':'VOTAR ↗',controlled||!selectedTargetId,'button vote-button')}${canShoot?button('shootSubmit','DISPARAR · 1 MUNIÇÃO',!selectedTargetId):''}</div>`;
+      if(!controlled) $('voteSubmit').onclick=()=>socket.emit('submitVote',{targetId:selectedTargetId});
       if(canShoot) $('shootSubmit').onclick=()=>shootSelected();
     } else if (canShoot) {
-      area.innerHTML = `<div class="action-prompt">INVENTOR · ${state.me.bullets} DISPARO(S) RESTANTE(S)</div><div class="action-row"><select id="shootSelect" class="action-select"><option value="">Seleciona um alvo…</option>${state.players.filter(p=>p.alive&&p.id!==playerId).map(p=>`<option value="${escapeHtml(p.id)}">${escapeHtml(p.name)}</option>`).join('')}</select><button id="shootSubmit" class="button action-button">DISPARAR ↗</button></div>`;
+      area.innerHTML=`<div class="action-prompt">INVENTOR · ${state.me.bullets} DISPARO(S) RESTANTE(S) · CLICA NUM ALVO.</div><div class="action-row">${selectionNote}${button('shootSubmit','DISPARAR ↗',!selectedTargetId)}</div>`;
       $('shootSubmit').onclick=()=>shootSelected();
     } else if (phase === 'DAY') area.innerHTML='<div class="action-prompt">A DISCUSSÃO ESTÁ ABERTA · A VOTAÇÃO COMEÇA NO FIM DO TEMPO</div>';
     else area.innerHTML='';
   }
   function shootSelected() {
-    const id = $('shootSelect')?.value || $('voteSelect')?.value;
-    if (!id) return showToast('Seleciona um alvo primeiro.');
-    socket.emit('playerAction',{action:'shoot',targetId:id});
+    if (!selectedTargetId) return showToast('Clica primeiro no card de um alvo.');
+    socket.emit('playerAction',{action:'shoot',targetId:selectedTargetId});
   }
   function renderGameOver() {
     const winner = gameOverPayload?.winnerFaction || state.winnerFaction || state.winner;
@@ -770,20 +868,29 @@
     if (event.target.closest('button') && !event.target.closest('#audioToggle')) audioManager.playSFX('click');
   }, true);
   $('playersList').addEventListener('click',e=>{
-    const action=e.target.closest('[data-card-action]');
-    if(action){socket.emit(action.dataset.cardAction,action.dataset.action?{action:action.dataset.action,targetId:action.dataset.targetId}:{targetId:action.dataset.targetId});return;}
-    const vote=e.target.closest('[data-vote-target]');
-    if(vote){socket.emit('submitVote',{targetId:vote.dataset.voteTarget});return;}
-    const shot=e.target.closest('[data-shoot-target]');
-    if(shot){socket.emit('playerAction',{action:'shoot',targetId:shot.dataset.shootTarget});}
-    const directTarget=e.target.closest('[data-player-target]');
-    if(directTarget){
-      const targetId=directTarget.dataset.playerTarget;
-      if(state.me?.role==='SABOTEUR') socket.emit('nightAction_Kill',{targetId});
-      else socket.emit('syndicateVote',{targetId});
+    const card=e.target.closest('[data-select-target]');
+    if(card) selectPlayerCard(card.dataset.selectTarget);
+  });
+  $('playersList').addEventListener('keydown',e=>{
+    if((e.key==='Enter'||e.key===' ')&&e.target.matches('[data-select-target]')){
+      e.preventDefault();
+      selectPlayerCard(e.target.dataset.selectTarget);
     }
   });
-  $('chatForm').onsubmit=e=>{e.preventDefault();const input=$('chatInput');if(input.value.trim()){socket.emit('sendMessage',{roomCode,message:input.value.trim()});input.value='';}};
+  $('chatInput').addEventListener('input', () => {
+    clearTimeout(typingTimeout);
+    if ($('chatInput').value.trim()) {
+      sendTypingStatus(true);
+      typingTimeout = setTimeout(() => sendTypingStatus(false), 2000);
+    } else sendTypingStatus(false);
+  });
+  $('chatForm').onsubmit=e=>{
+    e.preventDefault();
+    const input=$('chatInput'), message=input.value.trim();
+    clearTimeout(typingTimeout);
+    sendTypingStatus(false);
+    if(message){socket.emit('sendMessage',{roomCode,message});input.value='';}
+  };
   function sendLobbyMessage() {
     const input = $('lobby-chat-input');
     const message = input.value.trim();
@@ -834,10 +941,13 @@
     (data.lobbyChatHistory || []).forEach(appendLobbyChatMessage);
     if (!data.lobbyChatHistory?.length) lobbyChat.innerHTML = '<div class="lobby-chat-empty">A oficina está em silêncio.<br>Inicia a conversa com a tripulação.</div>';
     if (state) render();
+    hideReconnectScreen();
     showToast('Ligação restaurada. Voltaste à mesma oficina.');
   });
   socket.on('reconnectionError', ({ message } = {}) => {
     sessionStorage.removeItem('cidadeDormeReconnect');
+    hideReconnectScreen();
+    returnToMenu();
     showToast(message || 'A sessão já não pode ser recuperada.');
   });
   socket.on('registerSuccess', payload => acceptAccount(payload, 'Conta fundida com sucesso'));
@@ -880,10 +990,47 @@
     }
     enterRoom({roomCode:createdRoomCode,playerId:createdPlayerId});
   });
-  socket.on('gameState',next=>{if(leavingRoom)return;state=next;render();});
+  socket.on('gameState',next=>{
+    if(leavingRoom)return;
+    if(state?.phase!==next.phase) {
+      if (state?.phase === 'NIGHT' && next.phase !== 'NIGHT') syndicateMiras.clear();
+      if (state && ['DAY','VOTING'].includes(state.phase)) sendTypingStatus(false);
+      clearTimeout(typingTimeout);
+      clearTypingPlayers();
+      clearTargetSelection();
+      if (state) animatePhaseTransition(next.phase);
+    }
+    state=next;
+    render();
+  });
   socket.on('updateVotes',counts=>{if(!state)return;state.voteCounts=counts||{};renderPlayers();});
   socket.on('leftRoom', () => returnToMenu());
+  socket.on('playerTyping', ({ sender, senderId, isTyping } = {}) => {
+    if (!state || !['DAY','VOTING'].includes(state.phase) || !sender || senderId === playerId) return;
+    const key = senderId || sender;
+    const previous = typingPlayers.get(key);
+    if (previous) clearTimeout(previous.timeout);
+    if (!isTyping) typingPlayers.delete(key);
+    else {
+      const timeout = setTimeout(() => {
+        typingPlayers.delete(key);
+        renderTypingIndicator();
+      }, 4500);
+      typingPlayers.set(key, { name: sender, timeout });
+    }
+    renderTypingIndicator();
+  });
+  socket.on('updateSyndicateMiras', ({ senderId, senderName, targetId } = {}) => {
+    if (!state || state.phase !== 'NIGHT' || !senderId || !targetId) return;
+    syndicateMiras.set(senderId, { senderName: senderName || 'Aliado', targetId });
+    renderPlayers();
+  });
   socket.on('gameOver',result=>{
+    syndicateMiras.clear();
+    clearTypingPlayers();
+    clearTimeout(transitionTimeout);
+    $('transition-overlay').classList.remove('is-active');
+    $('transition-overlay').setAttribute('aria-hidden','true');
     gameOverPayload=result;
     if(result.winnerFaction==='Colecionador de Almas Mecânicas'||result.winnerFaction==='souls') audioManager.playSFX('mechanizationVictory');
     state={...(state||{}),phase:'GAMEOVER',ended:true,winnerFaction:result.winnerFaction,survivors:result.survivors||[]};
@@ -891,7 +1038,13 @@
     render();
   });
   socket.on('roomReset',({ roomCode: resetRoomCode } = {})=>{
-    gameOverPayload=null;revealedRole=null;selectedTarget=null;
+    syndicateMiras.clear();
+    clearTypingPlayers();
+    clearTimeout(transitionTimeout);
+    lastTransitionPhase=null;
+    $('transition-overlay').classList.remove('is-active');
+    $('transition-overlay').setAttribute('aria-hidden','true');
+    gameOverPayload=null;revealedRole=null;clearTargetSelection();
     matchProgress=null;
     clearTimeout(revealTimer);
     if (resetRoomCode) roomCode = resetRoomCode;
@@ -932,6 +1085,9 @@
     if (state) render();
   });
   socket.on('dayStarted',event=>{
+    syndicateMiras.clear();
+    if (state) renderPlayers();
+    animatePhaseTransition('DAY');
     document.body.classList.remove('night-phase');
     if (Array.isArray(event.players) && state) {
       const roster = new Map(event.players.map(player => [player.id, player]));
@@ -946,6 +1102,7 @@
     if(event.explosionMessage) addChat('Sistema · EXPLOSÃO',event.explosionMessage,false,'system-error');
     if(event.counterattackMessage) addChat('Sistema · FORNALHA',event.counterattackMessage,false,'system-warning');
   });
+  socket.on('nightStarted', () => animatePhaseTransition('NIGHT'));
   socket.on('updatePlayers',players=>{
     if(!state)return;
     const oldPlayers=new Map(state.players.map(p=>[p.id,p]));
@@ -1017,17 +1174,22 @@
     let saved;
     try { saved = JSON.parse(sessionStorage.getItem('cidadeDormeReconnect') || 'null'); } catch { saved = null; }
     if (saved?.username && saved?.roomCode && saved?.reconnectToken) {
+      showReconnectScreen();
       socket.emit('reconnectPlayer', saved);
     }
   });
   socket.on('disconnect',()=>{
     $('connectionLabel').textContent='DESLIGADO';
-    if (!roomCode) return;
+    clearTimeout(typingTimeout);
+    localIsTyping = false;
     let saved;
     try { saved = JSON.parse(sessionStorage.getItem('cidadeDormeReconnect') || '{}'); } catch { saved = {}; }
+    const reconnectRoomCode = roomCode || saved.roomCode;
+    if (!reconnectRoomCode) return;
+    showReconnectScreen();
     const username = accountProfile?.username || state?.players?.find(player => player.id === playerId)?.name || saved.username;
-    if (username && roomCode && saved.reconnectToken) {
-      sessionStorage.setItem('cidadeDormeReconnect', JSON.stringify({ username, roomCode, reconnectToken: saved.reconnectToken }));
+    if (username && saved.reconnectToken) {
+      sessionStorage.setItem('cidadeDormeReconnect', JSON.stringify({ username, roomCode: reconnectRoomCode, reconnectToken: saved.reconnectToken }));
     }
   });
   socket.on('connect_error',()=>{
@@ -1039,7 +1201,13 @@
     const row=document.createElement('div');row.className=`chat-message ${type==='system'?'system':''} ${type==='system-error'?'system-error':''} ${type==='system-warning'?'system-warning':''}`;
     const sender=document.createElement('strong');sender.textContent=`${name}${privateMessage?' · PRIVADO':''}`;
     const text=document.createElement('span');text.textContent=message;
-    row.append(sender,text);box.appendChild(row);box.scrollTop=box.scrollHeight;
+    if (type === 'system' || type === 'system-error') {
+      const alertBox=document.createElement('div');
+      alertBox.className='system-alert-box';
+      alertBox.append(sender,text);
+      row.append(alertBox);
+    } else row.append(sender,text);
+    box.appendChild(row);box.scrollTop=box.scrollHeight;
   }
   function appendLobbyChatMessage(data = {}) {
     if (data.type === 'player') {
@@ -1055,12 +1223,18 @@
     const box = $('lobby-chat-messages');
     box.querySelector('.lobby-chat-empty')?.remove();
     const row = document.createElement('div');
-    row.className = `lobby-chat-message ${data.type === 'system' ? 'system' : 'player'}`;
+    const isSystemAlert = data.type === 'system' || data.type === 'system-error';
+    row.className = `lobby-chat-message ${isSystemAlert ? 'system system-alert-message' : 'player'}`;
     const sender = document.createElement('strong');
-    sender.textContent = data.type === 'system' ? `[Sistema] ${data.sender || 'Sistema'}` : `${data.sender || 'Jogador'}:`;
+    sender.textContent = isSystemAlert ? `[Sistema] ${data.sender || 'Sistema'}` : `${data.sender || 'Jogador'}:`;
     const text = document.createElement('span');
     text.textContent = data.text || '';
-    row.append(sender, text);
+    if (isSystemAlert) {
+      const alertBox = document.createElement('div');
+      alertBox.className = 'system-alert-box';
+      alertBox.append(sender, text);
+      row.append(alertBox);
+    } else row.append(sender, text);
     box.appendChild(row);
     box.scrollTop = box.scrollHeight;
   }

@@ -79,6 +79,7 @@ class Game {
     this.log = [];
     this.votes = new Map();
     this.syndicateVotes = new Map();
+    this.syndicateMiras = new Map();
     this.actions = new Map();
     this.timer = null;
     this.deadline = null;
@@ -153,6 +154,7 @@ class Game {
     }
     replaceInMap(this.votes, true);
     replaceInMap(this.syndicateVotes, true);
+    replaceInMap(this.syndicateMiras, true);
     replaceInMap(this.lastInventorShot);
     replaceInMap(this.inspectionSwaps, true);
     [this.oiledTargets, this.stunnedNextNight, this.stunnedThisNight, this.silencedNextDay, this.silencedToday].forEach(replaceInSet);
@@ -334,6 +336,7 @@ class Game {
   beginNight() {
     if (this.ended) return;
     this.phase = 'NIGHT'; this.day += 1; this.actions.clear(); this.votes.clear(); this.syndicateVotes.clear();
+    this.syndicateMiras.clear();
     this.detonationTriggered = false;
     this.lastNightCounterattackMessage = null;
     this.silencedToday.clear();
@@ -359,6 +362,7 @@ class Game {
   beginDay() {
     if (this.ended) return;
     this.phase = 'DAY'; this.actions.clear();
+    this.syndicateMiras.clear();
     const deaths = this.lastNightDeaths || [];
     if (!deaths.length) this.addLog('O sol nasce. Ninguém foi eliminado durante a noite.', 'system');
     else for (const player of deaths) this.addLog(`O sol nasce. ${player.name} foi encontrado sem vida. Era ${getRoleInfo(player.role).name}.`, 'death');
@@ -793,6 +797,21 @@ class Game {
     this.emit();
   }
 
+  selectSyndicateTarget(playerId, targetId) {
+    const selector = this.getPlayer(playerId);
+    if (this.phase !== 'NIGHT') throw new Error('As miras do Sindicato só podem ser partilhadas durante a noite.');
+    if (!selector?.alive || getFaction(selector.role) !== 'syndicate') {
+      throw new Error('Só um membro vivo do Sindicato pode partilhar uma mira.');
+    }
+    if (this.stunnedThisNight.has(playerId)) throw new Error('Foste atordoado e não podes agir esta noite.');
+    const target = this.getPlayer(targetId);
+    if (!target?.alive || getFaction(target.role) === 'syndicate') {
+      throw new Error('A mira tem de apontar para um habitante vivo fora do Sindicato.');
+    }
+    this.syndicateMiras.set(playerId, targetId);
+    return { senderId: selector.id, senderName: selector.name, targetId: target.id };
+  }
+
   checkVotingComplete() {
     if (this.phase === 'VOTING' && this.living().every((p) => this.votes.has(p.id))) {
       clearTimeout(this.timer); this.resolveVote();
@@ -855,6 +874,7 @@ class Game {
   finish(winner, message) {
     if (this.ended) return this.gameOverResult;
     this.ended = true; this.winner = winner; this.winnerFaction = winner; this.phase = 'GAMEOVER';
+    this.syndicateMiras.clear();
     clearTimeout(this.timer); this.deadline = null;
     this.addLog(message, 'victory');
     this.gameOverResult = {
@@ -876,6 +896,7 @@ class Game {
     // a tela de fim de jogo aberta mesmo depois de a fase voltar ao lobby.
     this.ended = false;
     this.deadPlayers = []; this.log = []; this.votes.clear(); this.syndicateVotes.clear(); this.actions.clear();
+    this.syndicateMiras.clear();
     this.winner = null; this.winnerFaction = null; this.gameOverResult = null; this.lastElimination = null;
     this.testMode = false;
     this.lastNightDeaths = [];
