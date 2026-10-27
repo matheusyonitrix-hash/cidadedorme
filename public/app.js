@@ -7,6 +7,7 @@
   let typingTimeout = null, transitionTimeout = null, lastTransitionPhase = null, lastTransitionAt = 0, localIsTyping = false;
   const typingPlayers = new Map();
   const syndicateMiras = new Map();
+  const reportedPlayerIds = new Set();
   let accountProfile = null, matchProgress = null;
   const cosmetics = [
     { id: 'titulo_mestre_caldeira', name: 'Mestre da Caldeira', price: 150, kind: 'TÍTULO', description: 'Um título de prestígio exibido ao lado do teu nome na lista da oficina.' },
@@ -505,7 +506,12 @@
       const bribedClass = self && state.me?.bribeVoteControlled ? 'bribed-vote' : '';
       const bribeBadge = self && state.me?.bribeVoteLocked ? '<span class="bribe-badge" title="O teu voto foi confiscado">🪙 VOTO HERDADO</span>' : '';
       const badge = state.phase === 'VOTING' ? `<span class="vote-count" aria-label="${votes} voto(s)">⚙ ${votes}</span>` : '';
-      return `<div class="player-row ${p.alive?'':'dead'} ${p.border==='bronze'?'frame-bronze':p.border==='gold'?'frame-gold':''} ${p.isDisconnected?'player-disconnected':''} ${selected?'selected selected-card':''} ${canTarget?'selectable-card':''} ${aimingMembers.length?'syndicate-aim':''} ${state.phase==='VOTING'?'voting-card':''} ${bribedClass}" ${canTarget?`data-select-target="${escapeHtml(p.id)}" role="button" tabindex="0" aria-pressed="${selected}"`:''}>${badge}<div class="player-avatar">${p.alive?'⚙':'†'}</div><span class="player-name">${escapeHtml(p.name)}${self?' (tu)':''}${p.title?` <small class="player-cosmetic-title">${escapeHtml(p.title)}</small>`:''}</span>${bribeBadge}${role?`<span class="player-role">${escapeHtml(role)}</span>`:`<span class="player-state ${p.alive?'alive':'dead'}">${p.alive?(p.isDisconnected?'[A RECONECTAR]':'VIVO'):'[DESTRUÍDO]'}</span>`}${aimLabel}${canTarget?'<span class="direct-target-hint">CLICAR PARA SELECIONAR</span>':''}</div>`;
+      const canReport = !self && p.alive && ['DAY','VOTING'].includes(state.phase);
+      const wasReported = reportedPlayerIds.has(p.id);
+      const reportButton = canReport
+        ? `<button type="button" class="report-player-button ${wasReported?'is-reported':''}" data-report-target="${escapeHtml(p.id)}" aria-label="${wasReported?'Denúncia registada':'Denunciar jogador'}" title="${wasReported?'Denúncia registada':'Denunciar jogador'}" ${wasReported?'disabled':''}>${wasReported?'✓':'⚠'}</button>`
+        : '';
+      return `<div class="player-row ${p.alive?'':'dead'} ${p.border==='bronze'?'frame-bronze':p.border==='gold'?'frame-gold':''} ${p.isDisconnected?'player-disconnected':''} ${selected?'selected selected-card':''} ${canTarget?'selectable-card':''} ${aimingMembers.length?'syndicate-aim':''} ${state.phase==='VOTING'?'voting-card':''} ${bribedClass}" ${canTarget?`data-select-target="${escapeHtml(p.id)}" role="button" tabindex="0" aria-pressed="${selected}"`:''}>${badge}<div class="player-avatar">${p.alive?'⚙':'†'}</div><span class="player-name">${escapeHtml(p.name)}${self?' (tu)':''}${p.title?` <small class="player-cosmetic-title">${escapeHtml(p.title)}</small>`:''}</span>${bribeBadge}${role?`<span class="player-role">${escapeHtml(role)}</span>`:`<span class="player-state ${p.alive?'alive':'dead'}">${p.alive?(p.isDisconnected?'[A RECONECTAR]':'VIVO'):'[DESTRUÍDO]'}</span>`}${aimLabel}${canTarget?'<span class="direct-target-hint">CLICAR PARA SELECIONAR</span>':''}${reportButton}</div>`;
     }).join('');
   }
   function targetable(p) {
@@ -868,6 +874,16 @@
     if (event.target.closest('button') && !event.target.closest('#audioToggle')) audioManager.playSFX('click');
   }, true);
   $('playersList').addEventListener('click',e=>{
+    const reportButton=e.target.closest('[data-report-target]');
+    if(reportButton){
+      e.stopPropagation();
+      const targetId=reportButton.dataset.reportTarget;
+      if(!targetId||reportedPlayerIds.has(targetId))return;
+      reportedPlayerIds.add(targetId);
+      renderPlayers();
+      socket.emit('reportPlayer',{targetId});
+      return;
+    }
     const card=e.target.closest('[data-select-target]');
     if(card) selectPlayerCard(card.dataset.selectTarget);
   });
@@ -993,6 +1009,7 @@
   socket.on('gameState',next=>{
     if(leavingRoom)return;
     if(state?.phase!==next.phase) {
+      if (next.phase === 'NIGHT') reportedPlayerIds.clear();
       if (state?.phase === 'NIGHT' && next.phase !== 'NIGHT') syndicateMiras.clear();
       if (state && ['DAY','VOTING'].includes(state.phase)) sendTypingStatus(false);
       clearTimeout(typingTimeout);
@@ -1005,6 +1022,15 @@
   });
   socket.on('updateVotes',counts=>{if(!state)return;state.voteCounts=counts||{};renderPlayers();});
   socket.on('leftRoom', () => returnToMenu());
+  socket.on('reportResult', result => {
+    if (result?.ok) {
+      showToast(result.silenced ? 'Denúncia registada. As transmissões do jogador foram cortadas.' : 'Denúncia registada para este ciclo.');
+      return;
+    }
+    if (result?.targetId && !result.duplicate) reportedPlayerIds.delete(result.targetId);
+    showToast(result?.message || 'Não foi possível registar a denúncia.');
+    if (state) renderPlayers();
+  });
   socket.on('playerTyping', ({ sender, senderId, isTyping } = {}) => {
     if (!state || !['DAY','VOTING'].includes(state.phase) || !sender || senderId === playerId) return;
     const key = senderId || sender;
@@ -1102,7 +1128,10 @@
     if(event.explosionMessage) addChat('Sistema · EXPLOSÃO',event.explosionMessage,false,'system-error');
     if(event.counterattackMessage) addChat('Sistema · FORNALHA',event.counterattackMessage,false,'system-warning');
   });
-  socket.on('nightStarted', () => animatePhaseTransition('NIGHT'));
+  socket.on('nightStarted', () => {
+    reportedPlayerIds.clear();
+    animatePhaseTransition('NIGHT');
+  });
   socket.on('updatePlayers',players=>{
     if(!state)return;
     const oldPlayers=new Map(state.players.map(p=>[p.id,p]));

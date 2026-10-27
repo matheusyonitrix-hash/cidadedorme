@@ -13,6 +13,17 @@ const COSMETIC_PRICES = Object.freeze({
 });
 const COSMETIC_TITLES = Object.freeze({ titulo_mestre_caldeira: 'Mestre da Caldeira' });
 const COSMETIC_BORDERS = Object.freeze({ skin_borda_bronze: 'bronze', skin_borda_ouro: 'gold' });
+// Termos proibidos são tratados como palavras completas (Unicode), para não
+// alterar por engano palavras que apenas contenham a mesma sequência de letras.
+const OFFENSIVE_TERMS = Object.freeze([
+  /(?<![\p{L}\p{N}_])vai\s+tomar\s+no\s+cu(?![\p{L}\p{N}_])/giu,
+  /(?<![\p{L}\p{N}_])filho\s+da\s+puta(?![\p{L}\p{N}_])/giu,
+  /(?<![\p{L}\p{N}_])(?:caralho|porra|merda|bosta|foda(?:-se)?|foder|fodido|puta|puto|buceta|cuz[aã]o)(?![\p{L}\p{N}_])/giu
+]);
+
+function moderateMessage(message) {
+  return OFFENSIVE_TERMS.reduce((text, pattern) => text.replace(pattern, '[VAPORIZADO]'), String(message || ''));
+}
 
 function normalizeUsername(value) {
   return String(value || '').trim().toLocaleLowerCase('pt');
@@ -784,7 +795,7 @@ function installSocketHandlers(io) {
     const handleSendMessage = ({ message } = {}) => {
       const game = getGame(socket);
       const player = game?.getPlayer(socket.id);
-      const text = String(message || '').trim().slice(0, 500);
+      const text = moderateMessage(String(message || '').trim().slice(0, 500));
       if (!game || !player || !text || !player.alive || game.ended) return;
       if (['DAY', 'VOTING'].includes(game.phase) && player.isSilenced === true) {
         socket.emit('newMessage', {
@@ -802,6 +813,28 @@ function installSocketHandlers(io) {
     };
     socket.on('sendMessage', handleSendMessage);
     socket.on('chatMessage', handleSendMessage); // compatibilidade com clientes anteriores
+
+    socket.on('reportPlayer', ({ targetId } = {}) => {
+      const game = getGame(socket);
+      const normalizedTargetId = String(targetId || '');
+      if (!game) {
+        socket.emit('reportResult', { ok: false, message: 'Entra numa oficina primeiro.' });
+        return;
+      }
+
+      const result = game.reportPlayer(socket.id, normalizedTargetId);
+      if (!result.ok) {
+        socket.emit('reportResult', { ok: false, targetId: normalizedTargetId, duplicate: Boolean(result.duplicate), message: result.reason });
+        return;
+      }
+
+      socket.emit('reportResult', { ok: true, targetId: normalizedTargetId, silenced: result.silenced });
+      if (result.silenced) {
+        systemMessage(game, `[MODERAÇÃO] As transmissões de ${result.targetName} foram cortadas devido a denúncias do distrito.`);
+      }
+      // Publica imediatamente o estado de silêncio e sincroniza os clientes.
+      game.emit();
+    });
 
     // O estado de digitação só é transmitido durante a conversa pública.
     // O roomCode recebido do cliente não é confiado: a sala é resolvida pelo socket.

@@ -115,7 +115,7 @@ class Game {
     const cleanName = String(name || '').trim().replace(/\s+/g, ' ').slice(0, 20);
     if (cleanName.length < 2) throw new Error('O nome precisa de ter pelo menos 2 caracteres.');
     if ([...this.players.values()].some((p) => p.name.toLowerCase() === cleanName.toLowerCase())) throw new Error('Esse nome já está a ser usado na sala.');
-    const player = { id, name: cleanName, role: null, alive: true, connected: true, isDisconnected: false, host: this.players.size === 0, bullets: 2, isReady: false, isSilenced: false, isOiled: false, hasTitaniumPlate: false, mechanizedBy: null, isMechanized: false, subornedBy: null, bronzeCharges: 0, isAlerted: false };
+    const player = { id, name: cleanName, role: null, alive: true, connected: true, isDisconnected: false, host: this.players.size === 0, bullets: 2, isReady: false, isSilenced: false, reportedBy: [], isOiled: false, hasTitaniumPlate: false, mechanizedBy: null, isMechanized: false, subornedBy: null, bronzeCharges: 0, isAlerted: false };
     this.players.set(id, player);
     this.addLog(`${cleanName} entrou na oficina.`, 'system');
     this.emit();
@@ -144,6 +144,9 @@ class Game {
     player.id = nextId;
     player.connected = true;
     player.isDisconnected = false;
+    for (const [, candidate] of roster) {
+      candidate.reportedBy = [...new Set((candidate.reportedBy || []).map((id) => id === previousId ? nextId : id))];
+    }
     for (const [id, candidate] of roster) this.players.set(id === previousId ? nextId : id, candidate);
     replaceInMap(this.actions);
     for (const action of this.actions.values()) {
@@ -340,7 +343,12 @@ class Game {
     this.detonationTriggered = false;
     this.lastNightCounterattackMessage = null;
     this.silencedToday.clear();
-    for (const player of this.players.values()) { player.isSilenced = false; player.isAlerted = false; }
+    for (const player of this.players.values()) {
+      player.isSilenced = false;
+      player.isAlerted = false;
+      // Cada novo ciclo inicia com os registos de denúncia limpos.
+      player.reportedBy = [];
+    }
     this.inspectionSwaps.clear();
     this.bribedPlayerId = null;
     this.bankerId = null;
@@ -381,6 +389,30 @@ class Game {
     this.setTimer('VOTING', () => this.resolveVote());
     this.emit();
     this.checkVotingComplete();
+  }
+
+  reportPlayer(reporterId, targetId) {
+    if (!['DAY', 'VOTING'].includes(this.phase) || this.ended) {
+      return { ok: false, reason: 'As denúncias só podem ser feitas durante o Dia ou o Tribunal.' };
+    }
+    const reporter = this.getPlayer(reporterId);
+    const target = this.getPlayer(targetId);
+    if (!reporter?.alive || !target?.alive || reporter.id === target.id) {
+      return { ok: false, reason: 'Escolhe outro habitante vivo para denunciar.' };
+    }
+
+    if (!Array.isArray(target.reportedBy)) target.reportedBy = [];
+    if (target.reportedBy.includes(reporterId)) {
+      return { ok: false, duplicate: true, reason: 'Já registaste uma denúncia contra este habitante neste ciclo.' };
+    }
+
+    target.reportedBy.push(reporterId);
+    const silenced = target.reportedBy.length >= 3 && !target.isSilenced;
+    if (silenced) {
+      target.isSilenced = true;
+      this.silencedToday.add(target.id);
+    }
+    return { ok: true, silenced, targetName: target.name };
   }
 
   setTimer(phase, callback) {
@@ -907,7 +939,7 @@ class Game {
     this.stunnedNextNight.clear(); this.stunnedThisNight.clear();
     this.silencedNextDay.clear(); this.silencedToday.clear(); this.inspectionSwaps.clear();
     for (const player of this.players.values()) {
-      player.role = null; player.alive = true; player.bullets = 2; player.isReady = false; player.isSilenced = false; player.hasTitaniumPlate = false; player.mechanizedBy = null; player.isMechanized = false; player.subornedBy = null; player.bronzeCharges = 0; player.isAlerted = false;
+      player.role = null; player.alive = true; player.bullets = 2; player.isReady = false; player.isSilenced = false; player.reportedBy = []; player.hasTitaniumPlate = false; player.mechanizedBy = null; player.isMechanized = false; player.subornedBy = null; player.bronzeCharges = 0; player.isAlerted = false;
     }
     if (emit) this.emit();
   }
