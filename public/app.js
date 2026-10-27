@@ -75,6 +75,19 @@
           ]
         : sound === 'click'
           ? [{ type: 'square', from: 880, to: 587.33, duration: 0.075, volume: 0.045 }]
+          : sound === 'shopOpen'
+            ? [
+                { type: 'triangle', from: 740, to: 930, duration: 0.09, volume: 0.026 },
+                { type: 'square', from: 620, to: 460, duration: 0.11, volume: 0.018 }
+              ]
+            : sound === 'purchase'
+              ? [
+                  { type: 'triangle', from: 1320, to: 1760, duration: 0.12, volume: 0.035 },
+                  { type: 'sine', from: 1040, to: 1390, duration: 0.15, volume: 0.03 },
+                  { type: 'triangle', from: 1560, to: 1170, duration: 0.2, volume: 0.024 }
+                ]
+              : sound === 'error'
+                ? [{ type: 'triangle', from: 390, to: 250, duration: 0.13, volume: 0.022 }]
           : [];
       if (!tones.length) return;
       this.ensureContext().then(context => {
@@ -83,7 +96,7 @@
         tones.forEach((tone, index) => {
           const oscillator = context.createOscillator();
           const gain = context.createGain();
-          const startAt = now + (sound === 'mechanizationVictory' ? index * 0.055 : 0);
+          const startAt = now + (sound === 'mechanizationVictory' ? index * 0.055 : sound === 'purchase' ? index * 0.07 : sound === 'shopOpen' ? index * 0.035 : 0);
           oscillator.type = tone.type;
           oscillator.frequency.setValueAtTime(tone.from, startAt);
           oscillator.frequency.exponentialRampToValueAtTime(tone.to, startAt + tone.duration);
@@ -103,6 +116,10 @@
         });
       }).catch(() => {});
     }
+
+    playShopOpenSFX() { this.playSFX('shopOpen'); }
+    playPurchaseSFX() { this.playSFX('purchase'); }
+    playErrorSFX() { this.playSFX('error'); }
 
     stopAll() {
       for (const node of this.sfxNodes) {
@@ -185,6 +202,7 @@
     renderBazar();
     $('bazar-modal').classList.add('active');
     $('bazar-modal').setAttribute('aria-hidden', 'false');
+    audioManager.playShopOpenSFX();
   }
   function closeBazar() {
     $('bazar-modal').classList.remove('active');
@@ -664,13 +682,17 @@
     if (account) renderAccountProfile(account);
     $('bazarFeedback').textContent = 'Artigo adquirido e guardado na tua conta.';
     renderBazar();
+    audioManager.playPurchaseSFX();
   });
   socket.on('cosmeticEquipped', ({ account } = {}) => {
     if (account) renderAccountProfile(account);
     $('bazarFeedback').textContent = account?.equipped_cosmetic ? 'Título equipado. A tripulação já o consegue ver.' : 'Título removido.';
     renderBazar();
   });
-  socket.on('purchaseError', ({ message } = {}) => { $('bazarFeedback').textContent = message || 'Não foi possível concluir a operação.'; });
+  socket.on('purchaseError', ({ message } = {}) => {
+    $('bazarFeedback').textContent = message || 'Não foi possível concluir a operação.';
+    audioManager.playErrorSFX();
+  });
   socket.on('accountError', ({ message } = {}) => {
     setAuthBusy(false);
     $('authFeedback').textContent = message || 'Falha na autenticação.';
