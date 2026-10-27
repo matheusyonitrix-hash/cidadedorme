@@ -52,7 +52,8 @@ const playerSchema = new Schema(
     xp: { type: Number, default: 0, min: 0 },
     currencies: {
       copper_coins: { type: Number, default: 0, min: 0 },
-      steam_gears: { type: Number, default: 0, min: 0 }
+      steam_gears: { type: Number, default: 0, min: 0 },
+      gold_gears: { type: Number, default: 0, min: 0 }
     },
     unlocked_cosmetics: { type: [String], default: [] },
     equipped_cosmetic: { type: String, default: null },
@@ -168,20 +169,44 @@ playerSchema.statics.saveMatchResult = async function saveMatchResult(
     throw new Error(`Não existe jogador com o username "${username.trim()}".`);
   }
 
-  // Operadores de atualização comuns ($inc/$push) não podem ser misturados
-  // com um pipeline no mesmo findOneAndUpdate. Recalculamos o nível em outra
-  // operação atómica, sempre a partir do XP corrente no documento.
-  const currentXp = { $ifNull: ['$xp', 0] };
-  await this.updateOne(
+  // Recalcular o nível e creditar os prémios na mesma atualização atómica
+  // evita pagar duas vezes quando resultados concorrentes cruzam um limiar.
+  const calculatedLevel = {
+    $max: [1, {
+      $floor: {
+        $divide: [{
+          $add: [1, {
+            $sqrt: {
+              $add: [1, {
+                $divide: [{ $multiply: [8, { $ifNull: ['$xp', 0] }] }, XP_PER_FIRST_LEVEL]
+              }]
+            }
+          }]
+        }, 2]
+      }
+    }]
+  };
+  const previousLevel = { $ifNull: ['$level', 1] };
+  const levelsGained = { $max: [0, { $subtract: [calculatedLevel, previousLevel] }] };
+  const rewardedProfile = await this.findOneAndUpdate(
     { _id: player._id },
-    [{ $set: { level: {
-      $max: [1, { $floor: { $divide: [
-        { $add: [1, { $sqrt: { $add: [1, { $divide: [{ $multiply: [8, currentXp] }, XP_PER_FIRST_LEVEL] }] } }] },
-        2
-      ] } }]
-    } } }]
+    [{
+      $set: {
+        level: calculatedLevel,
+        'currencies.copper_coins': {
+          $add: [
+            { $ifNull: ['$currencies.copper_coins', 0] },
+            { $multiply: [levelsGained, 100] }
+          ]
+        },
+        'currencies.gold_gears': {
+          $add: [{ $ifNull: ['$currencies.gold_gears', 0] }, levelsGained]
+        }
+      }
+    }],
+    { new: true }
   );
-  return this.findById(player._id);
+  return rewardedProfile || this.findById(player._id);
 };
 
 const Player = mongoose.models.Player || mongoose.model('Player', playerSchema);

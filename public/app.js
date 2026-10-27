@@ -10,9 +10,11 @@
   const reportedPlayerIds = new Set();
   let accountProfile = null, matchProgress = null;
   const cosmetics = [
-    { id: 'titulo_mestre_caldeira', name: 'Mestre da Caldeira', price: 150, kind: 'TÍTULO', description: 'Um título de prestígio exibido ao lado do teu nome na lista da oficina.' },
-    { id: 'skin_borda_bronze', name: 'Filete de Bronze', price: 300, kind: 'MOLDURA', description: 'Uma borda de bronze para personalizar a tua identidade.' },
-    { id: 'skin_borda_ouro', name: 'Filete de Ouro', price: 600, kind: 'MOLDURA', description: 'Um acabamento dourado reservado aos grandes inventores.' }
+    { id: 'titulo_mestre_caldeira', name: 'Mestre da Caldeira', price: 150, currency: 'copper', kind: 'TÍTULO', description: 'Um título de prestígio exibido ao lado do teu nome na lista da oficina.' },
+    { id: 'skin_borda_bronze', name: 'Filete de Bronze', price: 300, currency: 'copper', kind: 'MOLDURA', description: 'Uma borda de bronze para personalizar a tua identidade.' },
+    { id: 'skin_borda_ouro', name: 'Filete de Ouro', price: 600, currency: 'copper', kind: 'MOLDURA', description: 'Um acabamento dourado reservado aos grandes inventores.' },
+    { id: 'titulo_premium_barao', name: 'Barão da Fuligem', price: 5, currency: 'gold', kind: 'TÍTULO', description: 'Título raro reservado a quem domina as caldeiras mais antigas.' },
+    { id: 'skin_premium_cristal', name: 'Moldura de Cristal', price: 12, currency: 'gold', kind: 'MOLDURA', description: 'Uma moldura translúcida lapidada com engrenagens de ouro.' }
   ];
   const pendingLobbySends = [];
   // Durante a saída, eventos antigos da sala não podem voltar a abrir o lobby.
@@ -157,8 +159,9 @@
     accountProfile = profile;
     const progress = levelProgress(profile);
     const coins = Number(profile.currencies?.copper_coins) || 0;
+    const goldGears = Number(profile.currencies?.gold_gears) || 0;
     $('accountProgress').classList.remove('hidden');
-    $('accountProgressLabel').textContent = `${profile.username} · NÍVEL ${progress.level} · XP ${progress.xpIntoLevel}/${progress.xpRequired} · ${coins} COBRE`;
+    $('accountProgressLabel').textContent = `${profile.username} · NÍVEL ${progress.level} · XP ${progress.xpIntoLevel}/${progress.xpRequired} · ${coins} COBRE · ⚙ ${goldGears} OURO`;
     $('accountXpBar').style.width = `${progress.percent}%`;
     renderMechanicalProfile(profile, progress, coins);
     $('openHistoryInGame').classList.remove('hidden');
@@ -181,6 +184,7 @@
     $('profileXpBarText').textContent = `${Math.round(progress.percent)}%`;
     $('profileXpLabel').textContent = `${progress.xpIntoLevel} / ${progress.xpRequired} XP`;
     $('profileCoins').textContent = String(coins);
+    $('display-gold-gears').textContent = String(Number(profile.currencies?.gold_gears) || 0);
 
     const unlocked = new Set(profile.unlocked_cosmetics || []);
     const allTitles = cosmetics.filter(item => item.kind === 'TÍTULO');
@@ -237,21 +241,29 @@
   function renderBazar() {
     if (!accountProfile) return;
     const unlocked = new Set(accountProfile.unlocked_cosmetics || []);
-    $('bazar-wallet').textContent = `Saldo: ${Number(accountProfile.currencies?.copper_coins) || 0} moedas de cobre`;
-    $('bazarItems').innerHTML = cosmetics.map(item => {
+    const copper = Number(accountProfile.currencies?.copper_coins) || 0;
+    const gold = Number(accountProfile.currencies?.gold_gears) || 0;
+    $('bazar-wallet').textContent = `Saldo: ${copper} moedas de cobre · ⚙ ${gold} Engrenagens de Ouro`;
+    const renderItem = item => {
       const owned = unlocked.has(item.id);
       const equipped = accountProfile.equipped_cosmetic === item.id;
+      const currencyName = item.currency === 'gold' ? 'OURO' : 'COBRE';
+      const currencyIcon = item.currency === 'gold' ? '✦' : '⚙';
       const action = !owned
-        ? `<button class="bazar-buy" data-buy-cosmetic="${item.id}" type="button">Comprar · ${item.price} ⚙</button>`
-        : item.id === 'titulo_mestre_caldeira'
+        ? `<button class="bazar-buy" data-buy-cosmetic="${item.id}" type="button">Comprar · ${item.price} ${currencyIcon}</button>`
+        : item.kind === 'TÍTULO'
           ? `<button class="bazar-equip" data-equip-cosmetic="${equipped ? '' : item.id}" type="button">${equipped ? 'Equipado ✓' : 'Equipar título'}</button>`
           : '<button class="bazar-buy owned" type="button" disabled>Adquirido ✓</button>';
-      return `<article class="bazar-item ${owned ? 'owned' : ''}"><div class="bazar-item-mark" aria-hidden="true">${item.kind === 'TÍTULO' ? '✦' : '◈'}</div><div class="bazar-item-copy"><span class="bazar-item-kind">${item.kind}</span><h3>${item.name}</h3><p>${item.description}</p></div><div class="bazar-item-action">${owned ? '<span class="bazar-owned">ADQUIRIDO</span>' : `<span class="bazar-price">${item.price} <small>COBRE</small></span>`}${action}</div></article>`;
-    }).join('');
+      return `<article class="bazar-item ${item.currency === 'gold'?'bazar-item-premium':''} ${owned ? 'owned' : ''}"><div class="bazar-item-mark" aria-hidden="true">${item.kind === 'TÍTULO' ? '✦' : '◈'}</div><div class="bazar-item-copy"><span class="bazar-item-kind">${item.kind}</span><h3>${escapeHtml(item.name)}</h3><p>${escapeHtml(item.description)}</p></div><div class="bazar-item-action">${owned ? '<span class="bazar-owned">ADQUIRIDO</span>' : `<span class="bazar-price">${item.price} <small>${currencyName}</small></span>`}${action}</div></article>`;
+    };
+    $('bazarCopperItems').innerHTML = cosmetics.filter(item => item.currency === 'copper').map(renderItem).join('');
+    $('bazarGoldItems').innerHTML = cosmetics.filter(item => item.currency === 'gold').map(renderItem).join('');
   }
   function openBazar() {
     if (!accountProfile) return showToast('Inicia sessão para visitar o Bazar a Vapor.');
     renderBazar();
+    $('bazarCatalog').classList.remove('hidden');
+    $('goldShopScreen').classList.add('hidden');
     $('bazar-modal').classList.add('active');
     $('bazar-modal').setAttribute('aria-hidden', 'false');
     audioManager.playShopOpenSFX();
@@ -467,7 +479,7 @@
       $('rosterCount').textContent = String(state.players.length).padStart(2,'0');
       const lobbySlots = Array.from({ length: 16 }, (_, index) => state.players[index] || null);
       $('lobbyPlayers').innerHTML = lobbySlots.map((p, index) => p
-        ? `<div class="roster-row ${p.isDisconnected?'roster-disconnected':''} ${p.border==='bronze'?'frame-bronze':p.border==='gold'?'frame-gold':''}"><div class="avatar">${escapeHtml(p.name.slice(0,1).toUpperCase())}</div><span>${escapeHtml(p.name)}</span>${p.title?`<small class="player-cosmetic-title">${escapeHtml(p.title)}</small>`:''}${p.isDisconnected?'<small class="disconnect-mark">A RECONECTAR</small>':''}${p.host?'<span class="host-mark">ANFITRIÃO</span>':''}${p.isReady?'<span class="ready-mark">PRONTO</span>':''}</div>`
+        ? `<div class="roster-row ${p.isDisconnected?'roster-disconnected':''} ${p.border==='bronze'?'frame-bronze':p.border==='gold'?'frame-gold':p.border==='crystal'?'frame-crystal':''}"><div class="avatar">${escapeHtml(p.name.slice(0,1).toUpperCase())}</div><span>${escapeHtml(p.name)}</span>${p.title?`<small class="player-cosmetic-title">${escapeHtml(p.title)}</small>`:''}${p.isDisconnected?'<small class="disconnect-mark">A RECONECTAR</small>':''}${p.host?'<span class="host-mark">ANFITRIÃO</span>':''}${p.isReady?'<span class="ready-mark">PRONTO</span>':''}</div>`
         : `<div class="roster-row empty"><div class="avatar">${String(index + 1).padStart(2,'0')}</div><span>[Vago]</span></div>`).join('');
       const me = state.players.find(p=>p.id===playerId);
       $('readyButton').textContent = me?.isReady ? 'Cancelar pronto' : 'Marcar como pronto';
@@ -514,7 +526,7 @@
       const reportButton = canReport
         ? `<button type="button" class="report-player-button ${wasReported?'is-reported':''}" data-report-target="${escapeHtml(p.id)}" aria-label="${wasReported?'Denúncia registada':'Denunciar jogador'}" title="${wasReported?'Denúncia registada':'Denunciar jogador'}" ${wasReported?'disabled':''}>${wasReported?'✓':'⚠'}</button>`
         : '';
-      return `<div class="player-row ${p.alive?'':'dead'} ${p.border==='bronze'?'frame-bronze':p.border==='gold'?'frame-gold':''} ${p.isDisconnected?'player-disconnected':''} ${selected?'selected selected-card':''} ${canTarget?'selectable-card':''} ${aimingMembers.length?'syndicate-aim':''} ${state.phase==='VOTING'?'voting-card':''} ${bribedClass}" ${canTarget?`data-select-target="${escapeHtml(p.id)}" role="button" tabindex="0" aria-pressed="${selected}"`:''}>${badge}<div class="player-avatar">${p.alive?'⚙':'†'}</div><span class="player-name">${escapeHtml(p.name)}${self?' (tu)':''}${p.title?` <small class="player-cosmetic-title">${escapeHtml(p.title)}</small>`:''}</span>${bribeBadge}${role?`<span class="player-role">${escapeHtml(role)}</span>`:`<span class="player-state ${p.alive?'alive':'dead'}">${p.alive?(p.isDisconnected?'[A RECONECTAR]':'VIVO'):'[DESTRUÍDO]'}</span>`}${aimLabel}${canTarget?'<span class="direct-target-hint">CLICAR PARA SELECIONAR</span>':''}${reportButton}</div>`;
+      return `<div class="player-row ${p.alive?'':'dead'} ${p.border==='bronze'?'frame-bronze':p.border==='gold'?'frame-gold':p.border==='crystal'?'frame-crystal':''} ${p.isDisconnected?'player-disconnected':''} ${selected?'selected selected-card':''} ${canTarget?'selectable-card':''} ${aimingMembers.length?'syndicate-aim':''} ${state.phase==='VOTING'?'voting-card':''} ${bribedClass}" ${canTarget?`data-select-target="${escapeHtml(p.id)}" role="button" tabindex="0" aria-pressed="${selected}"`:''}>${badge}<div class="player-avatar">${p.alive?'⚙':'†'}</div><span class="player-name">${escapeHtml(p.name)}${self?' (tu)':''}${p.title?` <small class="player-cosmetic-title">${escapeHtml(p.title)}</small>`:''}</span>${bribeBadge}${role?`<span class="player-role">${escapeHtml(role)}</span>`:`<span class="player-state ${p.alive?'alive':'dead'}">${p.alive?(p.isDisconnected?'[A RECONECTAR]':'VIVO'):'[DESTRUÍDO]'}</span>`}${aimLabel}${canTarget?'<span class="direct-target-hint">CLICAR PARA SELECIONAR</span>':''}${reportButton}</div>`;
     }).join('');
   }
   function targetable(p) {
@@ -837,7 +849,12 @@
   $('equippedBorder').addEventListener('change', saveProfileCosmetics);
   $('closeBazar').addEventListener('click', closeBazar);
   $('bazar-modal').addEventListener('click', event => { if (event.target === $('bazar-modal')) closeBazar(); });
-  $('bazarItems').addEventListener('click', event => {
+  $('bazarCatalog').addEventListener('click', event => {
+    if (event.target.closest('#openGoldShop')) {
+      $('bazarCatalog').classList.add('hidden');
+      $('goldShopScreen').classList.remove('hidden');
+      return;
+    }
     const buy = event.target.closest('[data-buy-cosmetic]');
     if (buy) {
       $('bazarFeedback').textContent = 'A negociar com a caldeira…';
@@ -846,6 +863,16 @@
     }
     const equip = event.target.closest('[data-equip-cosmetic]');
     if (equip) socket.emit('equipCosmetic', { cosmeticId: equip.dataset.equipCosmetic || null });
+  });
+  $('backToBazar').addEventListener('click', () => {
+    $('goldShopScreen').classList.add('hidden');
+    $('bazarCatalog').classList.remove('hidden');
+  });
+  $('goldShopPackages').addEventListener('click', event => {
+    const packageButton = event.target.closest('[data-buy-gold-package]');
+    if (!packageButton) return;
+    $('bazarFeedback').textContent = 'A validar o pacote demonstrativo…';
+    socket.emit('buyGoldGears', { packageId: packageButton.dataset.buyGoldPackage });
   });
   $('createRoom').onclick=()=>{
     const name=accountProfile?.username;
@@ -971,9 +998,11 @@
   });
   socket.on('registerSuccess', payload => acceptAccount(payload, 'Conta fundida com sucesso'));
   socket.on('loginSuccess', payload => acceptAccount(payload, 'Sessão iniciada'));
-  socket.on('purchaseSuccess', ({ account, cosmeticId } = {}) => {
+  socket.on('purchaseSuccess', ({ account, cosmeticId, packageId, amount, simulated } = {}) => {
     if (account) renderAccountProfile(account);
-    $('bazarFeedback').textContent = 'Artigo adquirido e guardado na tua conta.';
+    $('bazarFeedback').textContent = packageId
+      ? `+${Number(amount) || 0} Engrenagens de Ouro ${simulated ? 'creditadas no pacote demonstrativo.' : 'adquiridas.'}`
+      : 'Artigo adquirido e guardado na tua conta.';
     renderBazar();
     audioManager.playPurchaseSFX();
   });
@@ -996,8 +1025,19 @@
     $('authFeedback').textContent = message || 'Falha na autenticação.';
   });
   socket.on('playerProgressUpdated', progress => {
+    const previousLevel = Number(accountProfile?.level) || 1;
+    const newLevel = Number(progress?.level) || previousLevel;
+    const levelsGained = Math.max(Number(progress?.levelsGained) || 0, newLevel - previousLevel);
     matchProgress = progress;
     renderAccountProfile(progress);
+    if (levelsGained > 0) {
+      const copperReward = levelsGained * 100;
+      const goldReward = levelsGained;
+      const text = levelsGained === 1
+        ? `[PROGRESSÃO] Subiste para o Nível ${newLevel}! Foram injetadas 100 Peças de Cobre e 1 Engrenagem de Ouro na tua oficina.`
+        : `[PROGRESSÃO] Subiste ${levelsGained} níveis até ao Nível ${newLevel}! Foram injetadas ${copperReward} Peças de Cobre e ${goldReward} Engrenagens de Ouro na tua oficina.`;
+      addChat('Sistema', text, false, 'system');
+    }
     const xpTrack = document.querySelector('.xp-bar-container');
     if (xpTrack) {
       clearTimeout(xpRewardTimeout);

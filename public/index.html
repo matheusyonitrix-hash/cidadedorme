@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20261027-12">
+  <link rel="stylesheet" href="style.css?v=20261027-13">
 </head>
 <body>
   <main id="landing" class="landing">
@@ -36,7 +36,7 @@
             <div class="profile-card profile-widget">
               <div id="profileAvatar" class="profile-avatar">⚙</div>
               <div class="profile-main"><div class="section-kicker">IDENTIDADE DO MECÂNICO</div><h2 id="profileName">—</h2><div id="profileLevel" class="profile-level badge">NÍVEL 1</div><div class="profile-xp-track xp-bar-container"><span id="profileXpBar" class="xp-fill"></span><span id="profileXpBarText" class="xp-bar-label">0%</span></div><small id="profileXpLabel">0 / 1000 XP</small></div>
-              <div class="profile-wallet"><span>MOEDAS DE COBRE</span><strong id="profileCoins" class="copper-balance">0</strong><b>⚙</b></div>
+              <div class="profile-wallet"><span>MOEDAS DE COBRE</span><strong id="profileCoins" class="copper-balance">0</strong><b>⚙</b><span class="premium-balance-label">⚙️ <span id="display-gold-gears">0</span> Engrenagens de Ouro</span></div>
             </div>
             <div class="profile-customization">
               <label for="equippedTitle">Título equipado<select id="equippedTitle"></select></label>
@@ -155,8 +155,20 @@
   <button id="openBazarInGame" class="manual-open bazar-header-open hidden" type="button">🏪 Bazar a Vapor</button>
   <section id="bazar-modal" class="bazar-modal" role="dialog" aria-modal="true" aria-labelledby="bazar-title" aria-hidden="true">
     <div class="bazar-dialog">
-      <header class="bazar-heading"><div><div class="section-kicker">OFICINA DE ADORNOS · DISTRITO DA FULIGEM</div><h2 id="bazar-title">Bazar a Vapor</h2><p id="bazar-wallet">Saldo: 0 moedas de cobre</p></div><button id="closeBazar" class="bazar-close" type="button" aria-label="Fechar bazar">×</button></header>
-      <div id="bazarItems" class="bazar-items"></div>
+      <header class="bazar-heading"><div><div class="section-kicker">OFICINA DE ADORNOS · DISTRITO DA FULIGEM</div><h2 id="bazar-title">Bazar a Vapor</h2><p id="bazar-wallet">Saldo: 0 moedas de cobre · 0 Engrenagens de Ouro</p></div><button id="closeBazar" class="bazar-close" type="button" aria-label="Fechar bazar">×</button></header>
+      <div id="bazarCatalog" class="bazar-catalog">
+        <section class="bazar-category"><header><h3>Itens de Cobre</h3><span>ADORNOS DO DISTRITO</span></header><div id="bazarCopperItems" class="bazar-items"></div></section>
+        <section class="bazar-category premium-category"><header><h3>Relíquias Premium (Ouro)</h3><span>ENGRENAGENS DE OURO</span></header><div id="bazarGoldItems" class="bazar-items"></div></section>
+        <button id="openGoldShop" class="gold-shop-open" type="button">➕ Adquirir Engrenagens</button>
+      </div>
+      <section id="goldShopScreen" class="gold-shop-screen hidden" aria-label="Pacotes de Engrenagens de Ouro">
+        <button id="backToBazar" class="gold-shop-back" type="button">← Voltar ao Bazar</button>
+        <div class="section-kicker">RESERVA DE ENERGIA PREMIUM</div><h3>Engrenagens de Ouro</h3>
+        <p class="gold-shop-copy">Pacote demonstrativo para testes locais. Não é efetuada cobrança real.</p>
+        <div id="goldShopPackages" class="gold-shop-packages">
+          <article class="gold-package"><span class="gold-package-icon">⚙️</span><div><strong>Pacote de 10 Engrenagens</strong><small>Crédito demonstrativo · R$ 4,99</small></div><button type="button" data-buy-gold-package="pacote_ouro_10">Adquirir</button></article>
+        </div>
+      </section>
       <p id="bazarFeedback" class="bazar-feedback" aria-live="polite">As aquisições ficam guardadas na tua conta.</p>
     </div>
   </section>
@@ -182,6 +194,6 @@
   </section>
   <div id="reconnect-screen" class="steampunk-box" style="display:none;" role="status" aria-live="assertive" aria-hidden="true"><h2 class="gold-text animate-pulse">⚙️ Reconectando Sistemas...</h2><p>Sua conexão vacilou. Reconectando à Oficina em instantes...</p></div>
   <div id="transition-overlay" class="transition-overlay" aria-hidden="true"><div class="transition-caption"><span class="transition-gear" aria-hidden="true">⚙</span><span id="transition-caption-text">AS ESCOTILHAS ESTÃO A MOVER-SE</span></div></div>
-  <script src="/socket.io/socket.io.js"></script><script src="/app.js?v=20261027-11"></script>
+  <script src="/socket.io/socket.io.js"></script><script src="/app.js?v=20261027-13"></script>
 </body>
 </html>

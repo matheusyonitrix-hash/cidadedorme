@@ -7,12 +7,24 @@ const Player = require('./models/Player');
 const scryptAsync = promisify(scrypt);
 const USERNAME_PATTERN = /^[\p{L}\p{N}_-]{2,20}$/u;
 const COSMETIC_PRICES = Object.freeze({
-  titulo_mestre_caldeira: 150,
-  skin_borda_bronze: 300,
-  skin_borda_ouro: 600
+  titulo_mestre_caldeira: { type: 'copper', price: 150 },
+  skin_borda_bronze: { type: 'copper', price: 300 },
+  skin_borda_ouro: { type: 'copper', price: 600 },
+  titulo_premium_barao: { type: 'gold', price: 5 },
+  skin_premium_cristal: { type: 'gold', price: 12 }
 });
-const COSMETIC_TITLES = Object.freeze({ titulo_mestre_caldeira: 'Mestre da Caldeira' });
-const COSMETIC_BORDERS = Object.freeze({ skin_borda_bronze: 'bronze', skin_borda_ouro: 'gold' });
+const GOLD_GEAR_PACKAGES = Object.freeze({
+  pacote_ouro_10: { goldGears: 10, priceBRL: 4.99 }
+});
+const COSMETIC_TITLES = Object.freeze({
+  titulo_mestre_caldeira: 'Mestre da Caldeira',
+  titulo_premium_barao: 'Barão da Fuligem'
+});
+const COSMETIC_BORDERS = Object.freeze({
+  skin_borda_bronze: 'bronze',
+  skin_borda_ouro: 'gold',
+  skin_premium_cristal: 'crystal'
+});
 // Termos proibidos são tratados como palavras completas (Unicode), para não
 // alterar por engano palavras que apenas contenham a mesma sequência de letras.
 const OFFENSIVE_TERMS = Object.freeze([
@@ -51,7 +63,8 @@ function accountPayload(player) {
     xp: player.xp,
     currencies: {
       copper_coins: player.currencies?.copper_coins || 0,
-      steam_gears: player.currencies?.steam_gears || 0
+      steam_gears: player.currencies?.steam_gears || 0,
+      gold_gears: player.currencies?.gold_gears || 0
     },
     unlocked_cosmetics: player.unlocked_cosmetics || [],
     equipped_cosmetic: player.equipped_cosmetic || null,
@@ -215,11 +228,13 @@ function installSocketHandlers(io) {
         const profile = await Player.saveMatchResult(
           player.accountUsername, player.role, isVictory, xpGained, coinsGained
         );
+        const levelsGained = Math.max(0, profile.level - (player.accountLevel || 1));
         io.to(player.id).emit('playerProgressUpdated', {
           ...accountPayload(profile),
           xpGained,
           coinsGained,
-          leveledUp: profile.level > (player.accountLevel || 1)
+          leveledUp: levelsGained > 0,
+          levelsGained
         });
         player.accountLevel = profile.level;
       } catch (err) {
@@ -430,7 +445,9 @@ function installSocketHandlers(io) {
         if (typeof cosmeticId !== 'string' || !Object.hasOwn(COSMETIC_PRICES, cosmeticId)) {
           throw new Error('Este artigo não existe no Bazar.');
         }
-        const price = COSMETIC_PRICES[cosmeticId];
+        const { type, price } = COSMETIC_PRICES[cosmeticId];
+        const currencyPath = type === 'gold' ? 'currencies.gold_gears' : 'currencies.copper_coins';
+        const currencyLabel = type === 'gold' ? 'Engrenagens de Ouro' : 'moedas de cobre';
 
         // A condição e a dedução vivem na mesma operação MongoDB: dois cliques
         // concorrentes não podem cobrar duas vezes nem deixar saldo negativo.
@@ -438,9 +455,9 @@ function installSocketHandlers(io) {
           {
             username: socket.data.account.username,
             unlocked_cosmetics: { $ne: cosmeticId },
-            'currencies.copper_coins': { $gte: price }
+            [currencyPath]: { $gte: price }
           },
-          { $inc: { 'currencies.copper_coins': -price }, $push: { unlocked_cosmetics: cosmeticId } },
+          { $inc: { [currencyPath]: -price }, $push: { unlocked_cosmetics: cosmeticId } },
           { new: true, runValidators: true }
         );
 
@@ -448,10 +465,44 @@ function installSocketHandlers(io) {
           const current = await Player.findOne({ username: socket.data.account.username });
           if (!current) throw new Error('Não foi possível localizar o teu perfil.');
           if (current.unlocked_cosmetics?.includes(cosmeticId)) throw new Error('Já adquiriste este artigo.');
-          throw new Error(`Saldo insuficiente. Este artigo custa ${price} moedas de cobre.`);
+          throw new Error(`Saldo insuficiente. Este artigo custa ${price} ${currencyLabel}.`);
         }
         socket.data.account.unlocked_cosmetics = profile.unlocked_cosmetics || [];
-        socket.emit('purchaseSuccess', { cosmeticId, price, account: accountPayload(profile) });
+        socket.emit('purchaseSuccess', { cosmeticId, price, currency: type, account: accountPayload(profile) });
+      } catch (err) {
+        socket.emit('purchaseError', { message: err.message || 'Não foi possível concluir a compra.' });
+      }
+    });
+
+    socket.on('buyGoldGears', async ({ packageId } = {}) => {
+      try {
+        if (!socket.data.account?.username) throw new Error('Inicia sessão para adquirir Engrenagens de Ouro.');
+        if (Player.db.readyState !== 1) throw new Error('A loja está indisponível sem ligação ao MongoDB.');
+        if (process.env.NODE_ENV === 'production') {
+          throw new Error('A compra real de moeda premium ainda não está configurada. Nenhum valor foi cobrado.');
+        }
+        if (typeof packageId !== 'string' || !Object.hasOwn(GOLD_GEAR_PACKAGES, packageId)) {
+          throw new Error('Este pacote de engrenagens não existe.');
+        }
+
+        // Em desenvolvimento, o pacote é apenas uma simulação de compra.
+        // Produção nunca credita moeda sem confirmação de um gateway real.
+        const pack = GOLD_GEAR_PACKAGES[packageId];
+        const profile = await Player.findOneAndUpdate(
+          { username: socket.data.account.username },
+          { $inc: { 'currencies.gold_gears': pack.goldGears } },
+          { new: true, runValidators: true }
+        );
+        if (!profile) throw new Error('Não foi possível localizar o teu perfil.');
+
+        socket.emit('purchaseSuccess', {
+          packageId,
+          currency: 'gold',
+          amount: pack.goldGears,
+          priceBRL: pack.priceBRL,
+          simulated: true,
+          account: accountPayload(profile)
+        });
       } catch (err) {
         socket.emit('purchaseError', { message: err.message || 'Não foi possível concluir a compra.' });
       }
