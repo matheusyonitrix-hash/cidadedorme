@@ -5,6 +5,7 @@ const { ROLES, MIN_PLAYERS, getFaction, getRoleInfo } = require('./roles');
 const Player = require('./models/Player');
 
 const scryptAsync = promisify(scrypt);
+const checkoutCredentials = new Map();
 const USERNAME_PATTERN = /^[\p{L}\p{N}_-]{2,20}$/u;
 const COSMETIC_PRICES = Object.freeze({
   titulo_mestre_caldeira: { type: 'copper', price: 150 },
@@ -39,6 +40,34 @@ function moderateMessage(message) {
 
 function normalizeUsername(value) {
   return String(value || '').trim().toLocaleLowerCase('pt');
+}
+
+function issueCheckoutCredential(socket, username) {
+  const now = Date.now();
+  for (const [existingToken, credential] of checkoutCredentials) {
+    if (credential.expiresAt <= now) checkoutCredentials.delete(existingToken);
+  }
+  if (socket.data.checkoutCredential) checkoutCredentials.delete(socket.data.checkoutCredential);
+  const token = randomBytes(32).toString('hex');
+  checkoutCredentials.set(token, { username: normalizeUsername(username), expiresAt: now + 10 * 60 * 1000 });
+  socket.data.checkoutCredential = token;
+  return token;
+}
+
+function claimCheckoutCredential(token, username) {
+  if (typeof token !== 'string') return false;
+  const credential = checkoutCredentials.get(token);
+  if (!credential || credential.expiresAt < Date.now()) return false;
+  if (credential.username !== normalizeUsername(username) || credential.inUse) return false;
+  credential.inUse = true;
+  return true;
+}
+
+function finishCheckoutCredential(token, consumed) {
+  const credential = checkoutCredentials.get(token);
+  if (!credential) return;
+  if (consumed) checkoutCredentials.delete(token);
+  else credential.inUse = false;
 }
 
 async function hashPassword(password) {
@@ -400,7 +429,8 @@ function installSocketHandlers(io) {
         });
         const account = accountPayload(player);
       socket.data.account = { id: account.id, username: account.username, level: account.level, equipped_cosmetic: account.equipped_cosmetic, equipped_border: account.equipped_border, unlocked_cosmetics: account.unlocked_cosmetics };
-        socket.emit('registerSuccess', { account });
+        const checkoutToken = issueCheckoutCredential(socket, account.username);
+        socket.emit('registerSuccess', { account, checkoutToken });
       } catch (err) {
         const message = err.code === 11000 ? 'Esse usuário já está registado.' : err.message;
         socket.emit('accountError', { action: 'register', message: message || 'Não foi possível criar a conta.' });
@@ -423,7 +453,8 @@ function installSocketHandlers(io) {
         }
         const account = accountPayload(player);
         socket.data.account = { id: account.id, username: account.username, level: account.level, equipped_cosmetic: account.equipped_cosmetic, equipped_border: account.equipped_border, unlocked_cosmetics: account.unlocked_cosmetics };
-        socket.emit('loginSuccess', { account });
+        const checkoutToken = issueCheckoutCredential(socket, account.username);
+        socket.emit('loginSuccess', { account, checkoutToken });
       } catch (err) {
         socket.emit('accountError', { action: 'login', message: err.message || 'Não foi possível iniciar sessão.' });
       }
@@ -435,6 +466,8 @@ function installSocketHandlers(io) {
         return;
       }
       socket.data.account = null;
+      if (socket.data.checkoutCredential) checkoutCredentials.delete(socket.data.checkoutCredential);
+      socket.data.checkoutCredential = null;
       socket.emit('logoutSuccess');
     });
 
@@ -908,6 +941,7 @@ function installSocketHandlers(io) {
     });
 
     socket.on('disconnect', () => {
+      if (socket.data.checkoutCredential) checkoutCredentials.delete(socket.data.checkoutCredential);
       const roomCode = playerRooms.get(socket.id);
       const game = roomCode ? games.get(roomCode) : null;
       const player = game?.getPlayer(socket.id);
@@ -932,4 +966,4 @@ function installSocketHandlers(io) {
   return games;
 }
 
-module.exports = { activeRooms, installSocketHandlers };
+module.exports = { activeRooms, installSocketHandlers, claimCheckoutCredential, finishCheckoutCredential };

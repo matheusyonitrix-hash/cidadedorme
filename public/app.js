@@ -8,7 +8,7 @@
   const typingPlayers = new Map();
   const syndicateMiras = new Map();
   const reportedPlayerIds = new Set();
-  let accountProfile = null, matchProgress = null;
+  let accountProfile = null, matchProgress = null, checkoutCredential = null;
   const cosmetics = [
     { id: 'titulo_mestre_caldeira', name: 'Mestre da Caldeira', price: 150, currency: 'copper', kind: 'TÍTULO', description: 'Um título de prestígio exibido ao lado do teu nome na lista da oficina.' },
     { id: 'skin_borda_bronze', name: 'Filete de Bronze', price: 300, currency: 'copper', kind: 'MOLDURA', description: 'Uma borda de bronze para personalizar a tua identidade.' },
@@ -233,6 +233,7 @@
       setAuthBusy(false);
       return;
     }
+    checkoutCredential = typeof payload?.checkoutToken === 'string' ? payload.checkoutToken : null;
     $('accountPassword').value = '';
     $('authFeedback').textContent = `${actionLabel}: conta ligada e progresso sincronizado.`;
     setAuthBusy(false);
@@ -871,8 +872,29 @@
   $('goldShopPackages').addEventListener('click', event => {
     const packageButton = event.target.closest('[data-buy-gold-package]');
     if (!packageButton) return;
-    $('bazarFeedback').textContent = 'A validar o pacote demonstrativo…';
-    socket.emit('buyGoldGears', { packageId: packageButton.dataset.buyGoldPackage });
+    if (!accountProfile?.username || !checkoutCredential) {
+      $('bazarFeedback').textContent = 'Inicia sessão novamente para abrir o Checkout seguro.';
+      return audioManager.playErrorSFX();
+    }
+    packageButton.disabled = true;
+    $('bazarFeedback').textContent = 'A preparar o Checkout seguro…';
+    fetch('/create-checkout-session', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${checkoutCredential}`
+      },
+      body: JSON.stringify({ username: accountProfile.username, packageId: packageButton.dataset.buyGoldPackage })
+    }).then(async response => {
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || typeof result.url !== 'string') throw new Error(result.error || 'Não foi possível iniciar o Checkout.');
+      checkoutCredential = null; // credencial de Checkout é de utilização única.
+      window.location.assign(result.url);
+    }).catch(error => {
+      $('bazarFeedback').textContent = error.message || 'Falha ao abrir o Checkout.';
+      packageButton.disabled = false;
+      audioManager.playErrorSFX();
+    });
   });
   $('createRoom').onclick=()=>{
     const name=accountProfile?.username;
@@ -1338,6 +1360,14 @@
     card.classList.remove('show-details');$('closeRoleReveal').disabled=true;
     const revealDelay=window.matchMedia('(prefers-reduced-motion: reduce)').matches?0:1150;
     clearTimeout(revealTimer);revealTimer=setTimeout(()=>{card.classList.add('show-details');$('closeRoleReveal').disabled=false;},revealDelay);
+  }
+  const checkoutReturn = new URLSearchParams(window.location.search).get('payment');
+  if (checkoutReturn === 'success') {
+    showToast('Checkout concluído. As Engrenagens serão creditadas após a confirmação segura; inicia sessão para consultar o saldo.');
+    window.history.replaceState({}, document.title, window.location.pathname + window.location.hash);
+  } else if (checkoutReturn === 'cancelled') {
+    showToast('Pagamento cancelado. Nenhuma Engrenagem foi retirada.');
+    window.history.replaceState({}, document.title, window.location.pathname + window.location.hash);
   }
   setInterval(()=>{if(state&&state.secondsLeft>0){state.secondsLeft-=1;render();}},1000);
 })();

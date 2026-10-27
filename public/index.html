@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20261027-13">
+  <link rel="stylesheet" href="style.css?v=20261027-14">
 </head>
 <body>
   <main id="landing" class="landing">
@@ -164,9 +164,9 @@
       <section id="goldShopScreen" class="gold-shop-screen hidden" aria-label="Pacotes de Engrenagens de Ouro">
         <button id="backToBazar" class="gold-shop-back" type="button">← Voltar ao Bazar</button>
         <div class="section-kicker">RESERVA DE ENERGIA PREMIUM</div><h3>Engrenagens de Ouro</h3>
-        <p class="gold-shop-copy">Pacote demonstrativo para testes locais. Não é efetuada cobrança real.</p>
+        <p class="gold-shop-copy">Pagamento seguro processado pelo Stripe. As engrenagens são creditadas após a confirmação.</p>
         <div id="goldShopPackages" class="gold-shop-packages">
-          <article class="gold-package"><span class="gold-package-icon">⚙️</span><div><strong>Pacote de 10 Engrenagens</strong><small>Crédito demonstrativo · R$ 4,99</small></div><button type="button" data-buy-gold-package="pacote_ouro_10">Adquirir</button></article>
+          <article class="gold-package"><span class="gold-package-icon">⚙️</span><div><strong>Pacote de 10 Engrenagens</strong><small>Pagamento seguro · R$ 4,99</small></div><button type="button" data-buy-gold-package="pacote_ouro_10">Adquirir</button></article>
         </div>
       </section>
       <p id="bazarFeedback" class="bazar-feedback" aria-live="polite">As aquisições ficam guardadas na tua conta.</p>
@@ -194,6 +194,6 @@
   </section>
   <div id="reconnect-screen" class="steampunk-box" style="display:none;" role="status" aria-live="assertive" aria-hidden="true"><h2 class="gold-text animate-pulse">⚙️ Reconectando Sistemas...</h2><p>Sua conexão vacilou. Reconectando à Oficina em instantes...</p></div>
   <div id="transition-overlay" class="transition-overlay" aria-hidden="true"><div class="transition-caption"><span class="transition-gear" aria-hidden="true">⚙</span><span id="transition-caption-text">AS ESCOTILHAS ESTÃO A MOVER-SE</span></div></div>
-  <script src="/socket.io/socket.io.js"></script><script src="/app.js?v=20261027-13"></script>
+  <script src="/socket.io/socket.io.js"></script><script src="/app.js?v=20261027-14"></script>
 </body>
 </html>

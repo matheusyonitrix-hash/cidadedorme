@@ -56,6 +56,9 @@ const playerSchema = new Schema(
       gold_gears: { type: Number, default: 0, min: 0 }
     },
     unlocked_cosmetics: { type: [String], default: [] },
+    // Mantém apenas os identificadores recentes de Checkout já creditados;
+    // o webhook pode ser entregue mais de uma vez pelo Stripe.
+    processed_checkout_sessions: { type: [String], default: [] },
     equipped_cosmetic: { type: String, default: null },
     equipped_border: { type: String, default: null },
     match_history: {
