@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20261027-11">
+  <link rel="stylesheet" href="style.css?v=20261027-12">
 </head>
 <body>
   <main id="landing" class="landing">
@@ -33,10 +33,10 @@
           <p id="accountWelcome" class="account-welcome"></p>
           <button id="togglePlayerProfile" class="profile-toggle" type="button" aria-expanded="false" aria-controls="playerProfilePanel">👤 Painel do Mecânico <span>Ver Perfil &amp; Conquistas</span><b>＋</b></button>
           <section id="playerProfilePanel" class="player-profile-panel" aria-hidden="true">
-            <div class="profile-card">
+            <div class="profile-card profile-widget">
               <div id="profileAvatar" class="profile-avatar">⚙</div>
-              <div class="profile-main"><div class="section-kicker">IDENTIDADE DO MECÂNICO</div><h2 id="profileName">—</h2><div id="profileLevel" class="profile-level">NÍVEL 1</div><div class="profile-xp-track"><span id="profileXpBar"></span></div><small id="profileXpLabel">0 / 1000 XP</small></div>
-              <div class="profile-wallet"><span>MOEDAS DE COBRE</span><strong id="profileCoins">0</strong><b>⚙</b></div>
+              <div class="profile-main"><div class="section-kicker">IDENTIDADE DO MECÂNICO</div><h2 id="profileName">—</h2><div id="profileLevel" class="profile-level badge">NÍVEL 1</div><div class="profile-xp-track xp-bar-container"><span id="profileXpBar" class="xp-fill"></span><span id="profileXpBarText" class="xp-bar-label">0%</span></div><small id="profileXpLabel">0 / 1000 XP</small></div>
+              <div class="profile-wallet"><span>MOEDAS DE COBRE</span><strong id="profileCoins" class="copper-balance">0</strong><b>⚙</b></div>
             </div>
             <div class="profile-customization">
               <label for="equippedTitle">Título equipado<select id="equippedTitle"></select></label>

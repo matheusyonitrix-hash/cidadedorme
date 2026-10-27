@@ -182,3 +182,19 @@ body{transition:background-color .6s ease,color .6s ease}.night-phase{background
 .player-row .report-player-button.is-reported,.player-row .report-player-button:disabled{border-color:#7b5546;background:#2b201b;color:#d18a70;opacity:1;cursor:default}
 .player-row .report-player-button:disabled{pointer-events:none}
 @media(prefers-reduced-motion:reduce){.player-row .report-player-button{transition:none}}
+
+/* Painel do mecânico: XP e cobre com contraste de instrumentos de caldeira. */
+.profile-widget{position:relative;overflow:hidden;border-color:#75603d;background:linear-gradient(132deg,#222b22 0%,#18201b 58%,#151b17 100%);box-shadow:inset 0 1px 0 #e6c2731c,0 12px 34px #0005}
+.profile-widget:after{position:absolute;top:0;right:0;width:34%;height:1px;content:"";background:linear-gradient(90deg,transparent,#e6c27388);pointer-events:none}
+.profile-level.badge{margin-top:2px;padding:4px 8px;border:1px solid #9e8049;background:#171b15;color:#f0d28b;font:10px var(--mono);letter-spacing:.12em;text-shadow:0 1px 8px #e6c27355}
+.xp-bar-container{position:relative;height:18px;margin:10px 0 5px;overflow:hidden;border:1px solid #514631;border-radius:2px;background:linear-gradient(90deg,#101511,#1a211a);box-shadow:inset 0 2px 5px #0009}
+.profile-xp-track .xp-fill{position:absolute;inset:0 auto 0 0;display:block;width:0;height:100%;border-radius:1px;background:linear-gradient(90deg,#98602c 0%,#d39b43 42%,#f4d276 78%,#ffe7a0 100%);box-shadow:0 0 12px #e6c273,inset 0 0 4px rgba(255,255,255,0.4);animation:pulsingGlow 2.4s ease-in-out infinite;transition:width 0.8s cubic-bezier(0.4,0,0.2,1)}
+.xp-bar-container .xp-bar-label{position:absolute;inset:0;z-index:1;display:grid!important;place-items:center;width:100%;height:100%;background:none;box-shadow:none;animation:none;color:#fff3cf;font:700 8px var(--mono);letter-spacing:.08em;text-shadow:0 1px 3px #17120a,0 0 8px #211705;pointer-events:none}
+.profile-widget .profile-main>small{color:#c1b18e;font:9px var(--mono);letter-spacing:.035em}
+.profile-widget .profile-wallet{border-left-color:#786641}
+.profile-widget .profile-wallet span{color:#c1a66b;font:8px var(--mono);letter-spacing:.1em;text-shadow:0 1px 6px #000}
+.profile-widget .profile-wallet .copper-balance{color:#f0cf80;font:700 23px var(--serif);text-shadow:0 0 12px #e6c27355,0 2px 2px #000;transition:color .2s ease,text-shadow .2s ease}
+.profile-widget .profile-wallet b{color:#e3b960;font-size:15px;text-shadow:0 0 9px #dcae4c44}
+.xp-bar-container.xp-reward-pulse .xp-fill{animation:pulsingGlow .55s ease-in-out 3;box-shadow:0 0 22px #ffe39b,inset 0 0 7px rgba(255,255,255,.72)}
+@keyframes pulsingGlow{0%,100%{filter:brightness(.94);box-shadow:0 0 9px #d6a94d,inset 0 0 3px rgba(255,255,255,.32)}50%{filter:brightness(1.2);box-shadow:0 0 17px #ffe08a,inset 0 0 5px rgba(255,255,255,.58)}}
+@media(prefers-reduced-motion:reduce){.profile-xp-track .xp-fill{animation:none}.xp-bar-container.xp-reward-pulse .xp-fill{animation:none;box-shadow:0 0 18px #ffe39b,inset 0 0 7px rgba(255,255,255,.72)}}

@@ -3,7 +3,7 @@
   const MIN_PLAYERS = 2;
   const $ = (id) => document.getElementById(id);
   const landing = $('landing'), game = $('game'), lobbyPanel = $('lobbyPanel'), gamePanel = $('gamePanel');
-  let state = null, playerId = null, roomCode = null, selectedTargetId = null, selectedTargetIds = [], selectedSyndicateTargetId = null, secondaryTargetId = null, toastTimer = null, revealedRole = null, revealTimer = null, gameOverPayload = null;
+  let state = null, playerId = null, roomCode = null, selectedTargetId = null, selectedTargetIds = [], selectedSyndicateTargetId = null, secondaryTargetId = null, toastTimer = null, revealedRole = null, revealTimer = null, gameOverPayload = null, xpRewardTimeout = null;
   let typingTimeout = null, transitionTimeout = null, lastTransitionPhase = null, lastTransitionAt = 0, localIsTyping = false;
   const typingPlayers = new Map();
   const syndicateMiras = new Map();
@@ -175,7 +175,10 @@
     $('profileName').textContent = username;
     $('profileAvatar').textContent = username.slice(0, 1).toLocaleUpperCase('pt');
     $('profileLevel').textContent = `NÍVEL ${progress.level}`;
-    $('profileXpBar').style.width = `${progress.percent}%`;
+    const xpBar = $('profileXpBar');
+    xpBar.style.transition = 'width 0.8s cubic-bezier(0.4, 0, 0.2, 1)';
+    xpBar.style.width = `${progress.percent}%`;
+    $('profileXpBarText').textContent = `${Math.round(progress.percent)}%`;
     $('profileXpLabel').textContent = `${progress.xpIntoLevel} / ${progress.xpRequired} XP`;
     $('profileCoins').textContent = String(coins);
 
@@ -995,6 +998,14 @@
   socket.on('playerProgressUpdated', progress => {
     matchProgress = progress;
     renderAccountProfile(progress);
+    const xpTrack = document.querySelector('.xp-bar-container');
+    if (xpTrack) {
+      clearTimeout(xpRewardTimeout);
+      xpTrack.classList.remove('xp-reward-pulse');
+      void xpTrack.offsetWidth;
+      xpTrack.classList.add('xp-reward-pulse');
+      xpRewardTimeout = setTimeout(() => xpTrack.classList.remove('xp-reward-pulse'), 1500);
+    }
     if (state?.phase === 'GAMEOVER') renderGameOver();
   });
   socket.on('playerProgressError', ({ message } = {}) => showToast(message || 'Não foi possível guardar o progresso.'));
